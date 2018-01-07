@@ -5,7 +5,7 @@ Pogreb is an embedded key/value store for read-heavy workloads written in Go.
 ## Key characteristics
 
 - 100% Go.
-- High read performance.
+- Optimized for fast random lookups and infrequent bulk inserts.
 - Can store larger-than-memory data sets.
 - Low memory usage.
 - All DB methods are safe for concurrent use by multiple goroutines.
@@ -46,7 +46,7 @@ func main() {
 Use the `DB.Put()` function to insert a new key/value pair:
 
 ```go
-err := b.Put([]byte("testKey"), []byte("testValue"))
+err := db.Put([]byte("testKey"), []byte("testValue"))
 if err != nil {
 	log.Fatal(err)
 }
@@ -57,7 +57,7 @@ if err != nil {
 Use the `DB.Get()` function to retrieve the inserted value:
 
 ```go
-val, err := b.Get([]byte("testKey"))
+val, err := db.Get([]byte("testKey"))
 if err != nil {
 	log.Fatal(err)
 }
