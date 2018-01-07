@@ -81,3 +81,12 @@ for {
     log.Info(key, val)
 }
 ```
+
+## Performance
+
+The benchmarking code can be found in the [pogreb-bench](https://github.com/akrylysov/pogreb-bench) repository.
+
+Results of read performance benchmark of pogreb, goleveldb, bolt and badgerdb
+on DigitalOcean 8 CPUs / 16 GB RAM / 160 GB SSD + Ubuntu 16.04.3 (higher is better):
+
+![read-benchmark](http://akrylysov.github.io/pogreb/read-bench.png)
