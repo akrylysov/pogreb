@@ -94,9 +94,7 @@ func (f *osfile) Mmap(size int64) error {
 	if err != nil {
 		return err
 	}
-	if err := madviceRandom(data); err != nil {
-		return nil
-	}
+	madviceRandom(data)
 	f.data = data
 	return nil
 }
