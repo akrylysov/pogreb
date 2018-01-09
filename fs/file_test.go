@@ -2,6 +2,7 @@ package fs
 
 import (
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -28,6 +29,9 @@ func testLockFile(fs FileSystem, t *testing.T) {
 }
 
 func testLockFileNeedsRecovery(fs FileSystem, t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skip this test on Windows")
+	}
 	fs.Remove(lockTestPath)
 	lock, needRecovery, err := fs.CreateLockFile(lockTestPath, lockTestMode)
 	if lock == nil || needRecovery || err != nil {
