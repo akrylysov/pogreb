@@ -2,7 +2,6 @@ package fs
 
 import (
 	"os"
-	"syscall"
 )
 
 type osfile struct {
@@ -34,21 +33,7 @@ func (fs *osfs) OpenFile(name string, flag int, perm os.FileMode) (MmapFile, err
 }
 
 func (fs *osfs) CreateLockFile(name string, perm os.FileMode) (LockFile, bool, error) {
-	acquiredExisting := false
-	if _, err := os.Stat(name); err == nil {
-		acquiredExisting = true
-	}
-	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, perm)
-	if err != nil {
-		return nil, false, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		if err == syscall.EWOULDBLOCK {
-			err = os.ErrExist
-		}
-		return nil, false, err
-	}
-	return &oslockfile{f, name}, acquiredExisting, nil
+	return createLockFile(name, perm)
 }
 
 func (fs *osfs) Stat(name string) (os.FileInfo, error) {
