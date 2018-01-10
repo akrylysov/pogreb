@@ -1,4 +1,4 @@
-# Pogreb [![Build Status](https://travis-ci.org/akrylysov/pogreb.svg?branch=master)](https://travis-ci.org/akrylysov/pogreb) [![GoDoc](https://godoc.org/github.com/akrylysov/pogreb?status.svg)](https://godoc.org/github.com/akrylysov/pogreb)
+# Pogreb [![Build Status](https://travis-ci.org/akrylysov/pogreb.svg?branch=master)](https://travis-ci.org/akrylysov/pogreb) [![GoDoc](https://godoc.org/github.com/akrylysov/pogreb?status.svg)](https://godoc.org/github.com/akrylysov/pogreb) [![Go Report Card](https://goreportcard.com/badge/github.com/akrylysov/pogreb)](https://goreportcard.com/report/github.com/akrylysov/pogreb)
 
 Pogreb is an embedded key/value store for read-heavy workloads written in Go.
 
