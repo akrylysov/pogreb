@@ -1,8 +1,8 @@
 package fs
 
 import (
+	"io/ioutil"
 	"os"
-	"runtime"
 	"testing"
 )
 
@@ -29,25 +29,12 @@ func testLockFile(fs FileSystem, t *testing.T) {
 }
 
 func testLockFileNeedsRecovery(fs FileSystem, t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("skip this test on Windows")
-	}
-	fs.Remove(lockTestPath)
+	ioutil.WriteFile(lockTestPath, []byte{}, lockTestMode)
 	lock, needRecovery, err := fs.CreateLockFile(lockTestPath, lockTestMode)
-	if lock == nil || needRecovery || err != nil {
-		t.Fatal(err, needRecovery)
+	if lock == nil || !needRecovery || err != nil {
+		t.Fatal(lock, err, needRecovery)
 	}
-	if err := lock.(File).Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fs.Stat(lockTestPath); err != nil {
-		t.Fatal(err)
-	}
-	lock2, needRecovery2, err2 := fs.CreateLockFile(lockTestPath, lockTestMode)
-	if lock2 == nil || !needRecovery2 || err2 != nil {
-		t.Fatal(lock2, needRecovery2, err2)
-	}
-	if err := lock2.Unlock(); err != nil {
+	if err := lock.Unlock(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := fs.Stat(lockTestPath); err == nil {

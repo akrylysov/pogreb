@@ -76,6 +76,7 @@ func createLockFile(name string, perm os.FileMode) (LockFile, bool, error) {
 	}
 	f := os.NewFile(uintptr(fd), name)
 	if err := lockfile(f); err != nil {
+		f.Close()
 		return nil, false, err
 	}
 	return &oslockfile{f, name}, acquiredExisting, nil
