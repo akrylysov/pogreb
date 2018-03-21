@@ -1,6 +1,6 @@
 # Pogreb [![GoDoc](https://godoc.org/github.com/akrylysov/pogreb?status.svg)](https://godoc.org/github.com/akrylysov/pogreb) [![Build Status](https://travis-ci.org/akrylysov/pogreb.svg?branch=master)](https://travis-ci.org/akrylysov/pogreb) [![Windows Build status](https://ci.appveyor.com/api/projects/status/sg77adt2eqx9jgga/branch/master?svg=true)](https://ci.appveyor.com/project/akrylysov/pogreb/branch/master) [![Go Report Card](https://goreportcard.com/badge/github.com/akrylysov/pogreb)](https://goreportcard.com/report/github.com/akrylysov/pogreb)
 
-Pogreb is an embedded key/value store for read-heavy workloads written in Go.
+Pogreb is an embedded key-value store for read-heavy workloads written in Go.
 
 ## Key characteristics
 
@@ -61,7 +61,7 @@ val, err := db.Get([]byte("testKey"))
 if err != nil {
 	log.Fatal(err)
 }
-log.Info(val)
+log.Printf("%s", val)
 ```
 
 ### Iterating over items
@@ -78,7 +78,7 @@ for {
         }
         break
     }
-    log.Info(key, val)
+    log.Printf("%s %s", key, val)
 }
 ```
 
@@ -89,4 +89,4 @@ The benchmarking code can be found in the [pogreb-bench](https://github.com/akry
 Results of read performance benchmark of pogreb, goleveldb, bolt and badgerdb
 on DigitalOcean 8 CPUs / 16 GB RAM / 160 GB SSD + Ubuntu 16.04.3 (higher is better):
 
-![read-benchmark](http://akrylysov.github.io/pogreb/read-bench.png)
+![read-benchmark](https://akrylysov.github.io/pogreb/read-bench.png)
