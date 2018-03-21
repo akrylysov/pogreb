@@ -125,6 +125,7 @@ func TestFreelistDefrag(t *testing.T) {
 
 func TestFreelistSerialization(t *testing.T) {
 	l := freelist{[]block{{1, 1}, {2, 2}, {3, 3}, {10, 10}}}
+	fs.Mem.Remove("test")
 	f, _ := openFile(fs.Mem, "test", 0, 0)
 	off, err := l.write(f)
 	if err != nil {
