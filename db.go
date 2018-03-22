@@ -130,9 +130,7 @@ func (db *DB) startSyncer(interval time.Duration) {
 			default:
 				modifications := db.metrics.Puts.Value() + db.metrics.Dels.Value()
 				if modifications != lastModifications {
-					db.mu.Lock()
 					db.Sync()
-					db.mu.Unlock()
 					lastModifications = modifications
 				}
 				time.Sleep(interval)
@@ -303,8 +301,10 @@ func (db *DB) Items() *ItemIterator {
 	return &ItemIterator{db: db}
 }
 
-// Sync commits the contents of the database to the backing FileSystem; this is a noop for an in-memory database. It must only be called while the database is opened.
+// Sync commits the contents of the database to the backing FileSystem; this is effectively a noop for an in-memory database. It must only be called while the database is opened.
 func (db *DB) Sync() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
 	if err := db.data.Sync(); err != nil {
 		return err
 	}
