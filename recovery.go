@@ -53,6 +53,9 @@ func getUsedBlocks(db *DB) (uint32, []block, error) {
 }
 
 func recoverSplitCrash(db *DB) error {
+	if db.nBuckets == 1 {
+		return nil
+	}
 	prevnBuckets := db.nBuckets - 1
 	prevLevel := uint8(math.Floor(math.Log2(float64(prevnBuckets))))
 	prevSplitBucketIdx := prevnBuckets - (uint32(1) << prevLevel)
