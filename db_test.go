@@ -264,3 +264,20 @@ func BenchmarkGet(b *testing.B) {
 		b.Fatal(err)
 	}
 }
+
+func BenchmarkBucket_UnmarshalBinary(b *testing.B) {
+	testBucket := bucket{
+		slots: [slotsPerBucket]slot{},
+	}
+	for i := 0; i < slotsPerBucket; i++ {
+		testBucket.slots[i].hash = uint32(i)
+		testBucket.slots[i].keySize = uint16(i + 1)
+		testBucket.slots[i].valueSize = uint32(i + 17)
+	}
+	data, _ := testBucket.MarshalBinary()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tmp := bucket{}
+		tmp.UnmarshalBinary(data)
+	}
+}

@@ -53,6 +53,7 @@ func (b bucket) MarshalBinary() ([]byte, error) {
 
 func (b *bucket) UnmarshalBinary(data []byte) error {
 	for i := 0; i < slotsPerBucket; i++ {
+		_ = data[18] // bounds check hint to compiler; see golang.org/issue/14808
 		b.slots[i].hash = binary.LittleEndian.Uint32(data[:4])
 		b.slots[i].keySize = binary.LittleEndian.Uint16(data[4:6])
 		b.slots[i].valueSize = binary.LittleEndian.Uint32(data[6:10])
