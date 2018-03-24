@@ -46,6 +46,7 @@ type DB struct {
 	lock         fs.LockFile
 	metrics      Metrics
 	cancelSyncer context.CancelFunc
+	syncWrites   bool
 	dbInfo
 }
 
@@ -107,7 +108,11 @@ func Open(path string, opts *Options) (*DB, error) {
 			return nil, err
 		}
 	}
-	db.startSyncer(opts.BackgroundSyncInterval)
+	if opts.BackgroundSyncInterval > 0 {
+		db.startSyncer(opts.BackgroundSyncInterval)
+	} else if opts.BackgroundSyncInterval == -1 {
+		db.syncWrites = true
+	}
 	return db, nil
 }
 
@@ -116,9 +121,6 @@ func bucketOffset(idx uint32) int64 {
 }
 
 func (db *DB) startSyncer(interval time.Duration) {
-	if interval <= 0 {
-		return
-	}
 	var lastModifications int64
 	ctx, cancel := context.WithCancel(context.Background())
 	db.cancelSyncer = cancel
@@ -301,10 +303,7 @@ func (db *DB) Items() *ItemIterator {
 	return &ItemIterator{db: db}
 }
 
-// Sync commits the contents of the database to the backing FileSystem; this is effectively a noop for an in-memory database. It must only be called while the database is opened.
-func (db *DB) Sync() error {
-	db.mu.Lock()
-	defer db.mu.Unlock()
+func (db *DB) sync() error {
 	if err := db.data.Sync(); err != nil {
 		return err
 	}
@@ -312,6 +311,13 @@ func (db *DB) Sync() error {
 		return err
 	}
 	return nil
+}
+
+// Sync commits the contents of the database to the backing FileSystem; this is effectively a noop for an in-memory database. It must only be called while the database is opened.
+func (db *DB) Sync() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	return db.sync()
 }
 
 // Put sets the value for the given key. It updates the value for the existing key.
@@ -332,7 +338,12 @@ func (db *DB) Put(key []byte, value []byte) error {
 		return err
 	}
 	if float64(db.count)/float64(db.nBuckets*slotsPerBucket) > loadFactor {
-		return db.split()
+		if err := db.split(); err != nil {
+			return err
+		}
+	}
+	if db.syncWrites {
+		return db.sync()
 	}
 	return nil
 }
@@ -499,6 +510,9 @@ func (db *DB) Delete(key []byte) error {
 	}
 	db.data.free(sl.kvSize(), sl.kvOffset)
 	db.count--
+	if db.syncWrites {
+		return db.sync()
+	}
 	return nil
 }
 
