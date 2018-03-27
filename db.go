@@ -3,6 +3,7 @@ package pogreb
 import (
 	"bytes"
 	"context"
+	"math"
 	"os"
 	"sync"
 	"time"
@@ -25,7 +26,7 @@ const (
 	MaxValueLength = 1 << 30
 
 	// MaxKeys is the maximum numbers of keys in the DB.
-	MaxKeys = 1 << 30
+	MaxKeys = math.MaxUint32
 )
 
 type dbInfo struct {
