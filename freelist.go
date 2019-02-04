@@ -28,7 +28,10 @@ func (fl *freelist) free(off int64, size uint32) {
 	if i < len(fl.blocks) && off == fl.blocks[i].offset {
 		panic("freeing already freed offset")
 	}
-	fl.blocks = append(fl.blocks[:i], append([]block{{offset: off, size: size}}, fl.blocks[i:]...)...)
+
+	fl.blocks = append(fl.blocks, block{})
+	copy(fl.blocks[i+1:], fl.blocks[i:])
+	fl.blocks[i] = block{offset: off, size: size}
 }
 
 func (fl *freelist) allocate(size uint32) int64 {
@@ -41,7 +44,9 @@ func (fl *freelist) allocate(size uint32) int64 {
 	}
 	off := fl.blocks[i].offset
 	if fl.blocks[i].size == size {
-		fl.blocks = append(fl.blocks[:i], fl.blocks[i+1:]...)
+		copy(fl.blocks[i:], fl.blocks[i+1:])
+		fl.blocks[len(fl.blocks)-1] = block{}
+		fl.blocks = fl.blocks[:len(fl.blocks)-1]
 	} else {
 		fl.blocks[i].size -= size
 		fl.blocks[i].offset += int64(size)

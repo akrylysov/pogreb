@@ -139,3 +139,19 @@ func TestFreelistSerialization(t *testing.T) {
 	}
 	assertDeepEqual(t, []block{{1, 1}, {2, 2}, {3, 3}, {10, 10}, {off, uint32(fstat.Size())}}, l2.blocks)
 }
+
+func benchmarkFreelist(b *testing.B, count int) {
+	for n := 0; n < b.N; n++ {
+		l := freelist{}
+		for i := 0; i < count; i++ {
+			l.free(int64(i), (uint32(i)%32)+1)
+		}
+		for i := 0; i < count; i++ {
+			l.allocate((uint32(i) % 32) + 1)
+		}
+	}
+}
+
+func BenchmarkFreelistFree100(b *testing.B)   { benchmarkFreelist(b, 100) }
+func BenchmarkFreelistFree1000(b *testing.B)  { benchmarkFreelist(b, 1000) }
+func BenchmarkFreelistFree50000(b *testing.B) { benchmarkFreelist(b, 50000) }
