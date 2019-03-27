@@ -4,9 +4,14 @@ import (
 	"os"
 )
 
+const (
+	initialMmapSize = 1024 << 20
+)
+
 type osfile struct {
 	*os.File
-	data []byte
+	data     []byte
+	mmapSize int64
 }
 
 type osfs struct{}
@@ -23,7 +28,7 @@ func (fs *osfs) OpenFile(name string, flag int, perm os.FileMode) (MmapFile, err
 	if err != nil {
 		return nil, err
 	}
-	mf := &osfile{f, nil}
+	mf := &osfile{f, nil, 0}
 	if stat.Size() > 0 {
 		if err := mf.Mmap(stat.Size()); err != nil {
 			return nil, err
@@ -68,18 +73,33 @@ func (f *osfile) Close() error {
 	return f.File.Close()
 }
 
-func (f *osfile) Mmap(size int64) error {
-	if f.data != nil {
+func (f *osfile) Mmap(fileSize int64) error {
+	mmapSize := f.mmapSize
+
+	if mmapSize >= fileSize {
+		return nil
+	}
+
+	if mmapSize == 0 {
+		mmapSize = initialMmapSize
+		if mmapSize < fileSize {
+			mmapSize = fileSize
+		}
+	} else {
 		if err := munmap(f.data); err != nil {
 			return err
 		}
+		mmapSize *= 2
 	}
-	// TODO: align to the OS page size?
-	data, err := mmap(f.File, size)
+
+	data, mappedSize, err := mmap(f.File, fileSize, mmapSize)
 	if err != nil {
 		return err
 	}
+
 	madviceRandom(data)
+
 	f.data = data
+	f.mmapSize = mappedSize
 	return nil
 }
