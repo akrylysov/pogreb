@@ -8,8 +8,9 @@ import (
 	"unsafe"
 )
 
-func mmap(f *os.File, size int64) ([]byte, error) {
-	return syscall.Mmap(int(f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+func mmap(f *os.File, fileSize int64, mmapSize int64) ([]byte, int64, error) {
+	p, err := syscall.Mmap(int(f.Fd()), 0, int(mmapSize), syscall.PROT_READ, syscall.MAP_SHARED)
+	return p, mmapSize, err
 }
 
 func munmap(data []byte) error {
