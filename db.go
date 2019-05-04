@@ -122,10 +122,10 @@ func bucketOffset(idx uint32) int64 {
 }
 
 func (db *DB) startSyncer(interval time.Duration) {
-	var lastModifications int64
 	ctx, cancel := context.WithCancel(context.Background())
 	db.cancelSyncer = cancel
 	go func() {
+		var lastModifications int64
 		for {
 			select {
 			case <-ctx.Done():
@@ -133,7 +133,9 @@ func (db *DB) startSyncer(interval time.Duration) {
 			default:
 				modifications := db.metrics.Puts.Value() + db.metrics.Dels.Value()
 				if modifications != lastModifications {
-					db.Sync()
+					if err := db.Sync(); err != nil {
+						logger.Printf("Error synchronizing databse: %v", err)
+					}
 					lastModifications = modifications
 				}
 				time.Sleep(interval)
