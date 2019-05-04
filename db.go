@@ -240,7 +240,7 @@ func (db *DB) hash(data []byte) uint32 {
 // Get returns the value for the given key stored in the DB or nil if the key doesn't exist.
 func (db *DB) Get(key []byte) ([]byte, error) {
 	h := db.hash(key)
-	defer db.metrics.Gets.Add(1)
+	db.metrics.Gets.Add(1)
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 	var retValue []byte
@@ -332,7 +332,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 		return errValueTooLarge
 	}
 	h := db.hash(key)
-	defer db.metrics.Puts.Add(1)
+	db.metrics.Puts.Add(1)
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	if err := db.put(h, key, value); err != nil {
@@ -477,7 +477,7 @@ func (db *DB) split() error {
 // Delete deletes the given key from the DB.
 func (db *DB) Delete(key []byte) error {
 	h := db.hash(key)
-	defer db.metrics.Dels.Add(1)
+	db.metrics.Dels.Add(1)
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	b := bucketHandle{}
