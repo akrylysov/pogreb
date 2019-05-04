@@ -73,7 +73,10 @@ func (b *bucket) del(slotIdx int) {
 }
 
 func (b *bucketHandle) read() error {
-	buf := b.file.Slice(b.offset, b.offset+int64(bucketSize))
+	buf, err := b.file.Slice(b.offset, b.offset+int64(bucketSize))
+	if err != nil {
+		return err
+	}
 	return b.UnmarshalBinary(buf)
 }
 

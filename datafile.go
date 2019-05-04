@@ -6,12 +6,15 @@ type dataFile struct {
 }
 
 func (f *dataFile) readKeyValue(sl slot) ([]byte, []byte, error) {
-	keyValue := f.Slice(sl.kvOffset, sl.kvOffset+int64(sl.kvSize()))
+	keyValue, err := f.Slice(sl.kvOffset, sl.kvOffset+int64(sl.kvSize()))
+	if err != nil {
+		return nil, nil, err
+	}
 	return keyValue[:sl.keySize], keyValue[sl.keySize:], nil
 }
 
 func (f *dataFile) readKey(sl slot) ([]byte, error) {
-	return f.Slice(sl.kvOffset, sl.kvOffset+int64(sl.keySize)), nil
+	return f.Slice(sl.kvOffset, sl.kvOffset+int64(sl.keySize))
 }
 
 func (f *dataFile) allocate(size uint32) (int64, error) {

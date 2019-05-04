@@ -189,8 +189,11 @@ func (m *memfile) Sys() interface{} {
 	return nil
 }
 
-func (m *memfile) Slice(start int64, end int64) []byte {
-	return m.buf[start:end]
+func (m *memfile) Slice(start int64, end int64) ([]byte, error) {
+	if m.closed {
+		return nil, os.ErrClosed
+	}
+	return m.buf[start:end], nil
 }
 
 func (m *memfile) Mmap(size int64) error {

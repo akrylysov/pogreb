@@ -61,8 +61,11 @@ func (f *oslockfile) Unlock() error {
 	return f.Close()
 }
 
-func (f *osfile) Slice(start int64, end int64) []byte {
-	return f.data[start:end]
+func (f *osfile) Slice(start int64, end int64) ([]byte, error) {
+	if f.data == nil {
+		return nil, os.ErrClosed
+	}
+	return f.data[start:end], nil
 }
 
 func (f *osfile) Close() error {

@@ -23,7 +23,7 @@ type File interface {
 type MmapFile interface {
 	File
 	Mmap(size int64) error
-	Slice(start int64, end int64) []byte
+	Slice(start int64, end int64) ([]byte, error)
 }
 
 // LockFile represents a lock file.

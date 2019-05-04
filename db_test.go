@@ -187,10 +187,9 @@ func TestClose(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// FIXME: currently it panics with SIGSEGV
-	/*if _, err := db.Get([]byte{1}); err == nil {
+	if _, err := db.Get([]byte{1}); err == nil {
 		t.Fatal()
-	}*/
+	}
 	if err := db.Close(); err == nil {
 		t.Fatal()
 	}
