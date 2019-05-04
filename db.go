@@ -205,11 +205,11 @@ func (db *DB) readHeader(readFreeList bool) error {
 
 // Close closes the DB.
 func (db *DB) Close() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
 	if db.cancelSyncer != nil {
 		db.cancelSyncer()
 	}
-	db.mu.Lock()
-	defer db.mu.Unlock()
 	if err := db.writeHeader(); err != nil {
 		return err
 	}
