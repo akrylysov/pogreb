@@ -82,9 +82,20 @@ func Open(path string, opts *Options) (*DB, error) {
 			freelistOff: -1,
 		},
 	}
-	if indexStat, err := index.Stat(); err != nil {
-		return nil, err
-	} else if indexStat.Size() == 0 {
+	if index.size == 0 {
+		if data.size != 0 {
+			if err := index.Close(); err != nil {
+				logger.Print(err)
+			}
+			if err := data.Close(); err != nil {
+				logger.Print(err)
+			}
+			if err := lock.Unlock(); err != nil {
+				logger.Print(err)
+			}
+			// Data file exists, but index is missing.
+			return nil, errCorrupted
+		}
 		seed, err := hash.RandSeed()
 		if err != nil {
 			return nil, err
@@ -101,6 +112,15 @@ func Open(path string, opts *Options) (*DB, error) {
 		}
 	} else {
 		if err := db.readHeader(!needsRecovery); err != nil {
+			if err := index.Close(); err != nil {
+				logger.Print(err)
+			}
+			if err := data.Close(); err != nil {
+				logger.Print(err)
+			}
+			if err := lock.Unlock(); err != nil {
+				logger.Print(err)
+			}
 			return nil, err
 		}
 	}

@@ -195,6 +195,47 @@ func TestClose(t *testing.T) {
 	}
 }
 
+func TestCorruptedIndex(t *testing.T) {
+	db, err := removeAndOpen("test.db", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := os.OpenFile("test.db.index", os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("corrupted"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = Open("test.db", nil); err != errCorrupted {
+		t.Fatalf("expected %v; got %v", errCorrupted, err)
+	}
+}
+
+func TestMissingIndex(t *testing.T) {
+	db, err := removeAndOpen("test.db", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	os.Remove("test.db.index")
+
+	if _, err = Open("test.db", nil); err != errCorrupted {
+		t.Fatalf("expected %v; got %v", errCorrupted, err)
+	}
+}
+
 func TestWordsDict(t *testing.T) {
 	fwords, err := os.Open("/usr/share/dict/words")
 	if err != nil {
