@@ -179,6 +179,31 @@ func TestEmptyValue(t *testing.T) {
 	}
 }
 
+func TestDataRecycle(t *testing.T) {
+	db, err := removeAndOpen("test.db", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Put([]byte{1}, []byte{8}); err != nil {
+		t.Fatal(err)
+	}
+	v, err := db.Get([]byte{1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, []byte{8}, v)
+	if err := db.Delete([]byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Put([]byte{1}, []byte{9}); err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, []byte{8}, v)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClose(t *testing.T) {
 	db, err := removeAndOpen("test.db", nil)
 	if err != nil {
