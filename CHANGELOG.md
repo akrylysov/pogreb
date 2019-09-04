@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.8.2] - 2019-09-04
+### Fixed
+- Race condition could lead to data corruption.
+
 ## [0.8.1] - 2019-06-30
 ### Fixed
 - Fix panic when accessing closed database.
