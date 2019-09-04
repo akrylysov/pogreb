@@ -141,6 +141,12 @@ func bucketOffset(idx uint32) int64 {
 	return int64(headerSize) + (int64(bucketSize) * int64(idx))
 }
 
+func cloneBytes(src []byte) []byte {
+	dst := make([]byte, len(src))
+	copy(dst, src)
+	return dst
+}
+
 func (db *DB) startSyncer(interval time.Duration) {
 	ctx, cancel := context.WithCancel(context.Background())
 	db.cancelSyncer = cancel
@@ -277,7 +283,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 					return true, err
 				}
 				if bytes.Equal(key, slKey) {
-					retValue = value
+					retValue = cloneBytes(value)
 					return true, nil
 				}
 				db.metrics.HashCollisions.Add(1)

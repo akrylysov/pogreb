@@ -41,6 +41,8 @@ func (it *ItemIterator) Next() ([]byte, []byte, error) {
 					if err != nil {
 						return true, err
 					}
+					key = cloneBytes(key)
+					value = cloneBytes(value)
 					it.queue = append(it.queue, item{key: key, value: value})
 				}
 				return false, nil
