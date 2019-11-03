@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.8.3] - 2019-11-03
+### Fixed
+- Fix slice bounds out of range error mapping files on Windows.
+
 ## [0.8.2] - 2019-09-04
 ### Fixed
 - Race condition could lead to data corruption.
