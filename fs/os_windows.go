@@ -29,7 +29,7 @@ func mmap(f *os.File, fileSize int64, mmapSize int64) ([]byte, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	data := (*[1 << 30]byte)(unsafe.Pointer(ptr))[:size]
+	data := (*[maxMmapSize]byte)(unsafe.Pointer(ptr))[:size]
 	return data, size, nil
 }
 
