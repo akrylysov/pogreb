@@ -1,6 +1,7 @@
 package pogreb
 
 import (
+	"math"
 	"time"
 
 	"github.com/akrylysov/pogreb/fs"
@@ -15,9 +16,14 @@ type Options struct {
 	BackgroundSyncInterval time.Duration
 
 	FileSystem fs.FileSystem
+
+	path                       string
+	maxDatafileSize            uint32
+	compactionMinDatafileSize  uint32
+	compactionMinFragmentation float32
 }
 
-func (src *Options) copyWithDefaults() *Options {
+func (src *Options) copyWithDefaults(path string) *Options {
 	opts := Options{}
 	if src != nil {
 		opts = *src
@@ -25,5 +31,15 @@ func (src *Options) copyWithDefaults() *Options {
 	if opts.FileSystem == nil {
 		opts.FileSystem = fs.OS
 	}
+	if opts.maxDatafileSize == 0 {
+		opts.maxDatafileSize = math.MaxUint32
+	}
+	if opts.compactionMinDatafileSize == 0 {
+		opts.compactionMinDatafileSize = 32 << 20
+	}
+	if opts.compactionMinFragmentation == 0 {
+		opts.compactionMinFragmentation = 0.5
+	}
+	opts.path = path
 	return &opts
 }

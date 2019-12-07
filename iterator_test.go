@@ -6,7 +6,7 @@ import (
 )
 
 func TestIteratorEmpty(t *testing.T) {
-	db, err := removeAndOpen("test.db", nil)
+	db, err := openTestDB(nil)
 	if err != nil {
 		t.Fatal()
 	}
@@ -23,7 +23,7 @@ func TestIteratorEmpty(t *testing.T) {
 }
 
 func TestIterator(t *testing.T) {
-	db, err := removeAndOpen("test.db", nil)
+	db, err := openTestDB(nil)
 	if err != nil {
 		t.Fatal()
 	}
@@ -40,12 +40,11 @@ func TestIterator(t *testing.T) {
 	it := db.Items()
 	for {
 		key, value, err := it.Next()
+		if err == ErrIterationDone {
+			break
+		}
 		if err != nil {
-			if err == ErrIterationDone {
-				break
-			} else {
-				t.Fatal()
-			}
+			t.Fatal(err)
 		}
 		if k, ok := items[key[0]]; !ok {
 			t.Fatalf("unknown key %v", k)

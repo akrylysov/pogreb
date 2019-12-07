@@ -30,14 +30,14 @@ func (it *ItemIterator) Next() ([]byte, []byte, error) {
 	defer it.db.mu.RUnlock()
 
 	if len(it.queue) == 0 {
-		for it.nextBucketIdx < it.db.nBuckets {
-			err := it.db.forEachBucket(it.nextBucketIdx, func(b bucketHandle) (bool, error) {
+		for it.nextBucketIdx < it.db.index.numBuckets {
+			err := it.db.index.forEachBucket(it.nextBucketIdx, func(b bucketHandle) (bool, error) {
 				for i := 0; i < slotsPerBucket; i++ {
 					sl := b.slots[i]
-					if sl.kvOffset == 0 {
+					if sl.offset == 0 {
 						return true, nil
 					}
-					key, value, err := it.db.data.readKeyValue(sl)
+					key, value, err := it.db.datalog.ReadKeyValue(sl)
 					if err != nil {
 						return true, err
 					}

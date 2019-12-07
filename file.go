@@ -1,7 +1,7 @@
 package pogreb
 
 import (
-	"encoding"
+	"io"
 	"os"
 
 	"github.com/akrylysov/pogreb/fs"
@@ -12,9 +12,13 @@ type file struct {
 	size int64
 }
 
-func openFile(fsyst fs.FileSystem, name string, flag int, perm os.FileMode) (file, error) {
-	fi, err := fsyst.OpenFile(name, flag, perm)
-	f := file{}
+func openFile(fsyst fs.FileSystem, name string, truncate bool) (*file, error) {
+	flag := os.O_CREATE | os.O_RDWR
+	if truncate {
+		flag |= os.O_TRUNC
+	}
+	fi, err := fsyst.OpenFile(name, flag, os.FileMode(0640))
+	f := &file{}
 	if err != nil {
 		return f, err
 	}
@@ -24,7 +28,44 @@ func openFile(fsyst fs.FileSystem, name string, flag int, perm os.FileMode) (fil
 		return f, err
 	}
 	f.size = stat.Size()
+	if f.size == 0 {
+		if err := f.writeHeader(); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := f.readHeader(); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := f.Seek(int64(headerSize), io.SeekStart); err != nil {
+		return nil, err
+	}
 	return f, err
+}
+
+func (f *file) writeHeader() error {
+	h := newHeader()
+	data, err := h.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	if _, err = f.append(data); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f *file) readHeader() error {
+	h := &header{}
+	buf := make([]byte, headerSize)
+	if _, err := io.ReadFull(f, buf); err != nil {
+		return err
+	}
+	return h.UnmarshalBinary(buf)
+}
+
+func (f *file) empty() bool {
+	return f.size == int64(headerSize)
 }
 
 func (f *file) extend(size uint32) (int64, error) {
@@ -43,21 +84,4 @@ func (f *file) append(data []byte) (int64, error) {
 	}
 	f.size += int64(len(data))
 	return off, f.Mmap(f.size)
-}
-
-func (f *file) writeMarshalableAt(m encoding.BinaryMarshaler, off int64) error {
-	buf, err := m.MarshalBinary()
-	if err != nil {
-		return err
-	}
-	_, err = f.WriteAt(buf, off)
-	return err
-}
-
-func (f *file) readUnmarshalableAt(m encoding.BinaryUnmarshaler, size uint32, off int64) error {
-	buf := make([]byte, size)
-	if _, err := f.ReadAt(buf, off); err != nil {
-		return err
-	}
-	return m.UnmarshalBinary(buf)
 }

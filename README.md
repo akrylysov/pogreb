@@ -74,11 +74,11 @@ Use the `DB.Items()` function which returns a new instance of `ItemIterator`:
 it := db.Items()
 for {
     key, val, err := it.Next()
-    if err != nil {
-        if err != pogreb.ErrIterationDone {
-            log.Fatal(err)
-        }
-        break
+    if err == pogreb.ErrIterationDone {
+    	break
+    }
+    if err != nil { 
+        log.Fatal(err)
     }
     log.Printf("%s %s", key, val)
 }

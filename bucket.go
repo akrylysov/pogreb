@@ -6,11 +6,17 @@ import (
 	"github.com/akrylysov/pogreb/fs"
 )
 
+const (
+	slotsPerBucket        = 31
+	bucketSize     uint32 = 512
+)
+
 type slot struct {
 	hash      uint32
+	fileID    uint16
 	keySize   uint16
 	valueSize uint32
-	kvOffset  int64
+	offset    uint32
 }
 
 func (sl slot) kvSize() uint32 {
@@ -28,10 +34,6 @@ type bucketHandle struct {
 	offset int64
 }
 
-const (
-	bucketSize uint32 = 512
-)
-
 func align512(n uint32) uint32 {
 	return (n + 511) &^ 511
 }
@@ -42,10 +44,11 @@ func (b bucket) MarshalBinary() ([]byte, error) {
 	for i := 0; i < slotsPerBucket; i++ {
 		sl := b.slots[i]
 		binary.LittleEndian.PutUint32(buf[:4], sl.hash)
-		binary.LittleEndian.PutUint16(buf[4:6], sl.keySize)
-		binary.LittleEndian.PutUint32(buf[6:10], sl.valueSize)
-		binary.LittleEndian.PutUint64(buf[10:18], uint64(sl.kvOffset))
-		buf = buf[18:]
+		binary.LittleEndian.PutUint16(buf[4:6], sl.fileID)
+		binary.LittleEndian.PutUint16(buf[6:8], sl.keySize)
+		binary.LittleEndian.PutUint32(buf[8:12], sl.valueSize)
+		binary.LittleEndian.PutUint32(buf[12:16], sl.offset)
+		buf = buf[16:]
 	}
 	binary.LittleEndian.PutUint64(buf[:8], uint64(b.next))
 	return data, nil
@@ -53,12 +56,13 @@ func (b bucket) MarshalBinary() ([]byte, error) {
 
 func (b *bucket) UnmarshalBinary(data []byte) error {
 	for i := 0; i < slotsPerBucket; i++ {
-		_ = data[18] // bounds check hint to compiler; see golang.org/issue/14808
+		_ = data[16] // bounds check hint to compiler; see golang.org/issue/14808
 		b.slots[i].hash = binary.LittleEndian.Uint32(data[:4])
-		b.slots[i].keySize = binary.LittleEndian.Uint16(data[4:6])
-		b.slots[i].valueSize = binary.LittleEndian.Uint32(data[6:10])
-		b.slots[i].kvOffset = int64(binary.LittleEndian.Uint64(data[10:18]))
-		data = data[18:]
+		b.slots[i].fileID = binary.LittleEndian.Uint16(data[4:6])
+		b.slots[i].keySize = binary.LittleEndian.Uint16(data[6:8])
+		b.slots[i].valueSize = binary.LittleEndian.Uint32(data[8:12])
+		b.slots[i].offset = binary.LittleEndian.Uint32(data[12:16])
+		data = data[16:]
 	}
 	b.next = int64(binary.LittleEndian.Uint64(data[:8]))
 	return nil
@@ -95,9 +99,9 @@ type slotWriter struct {
 	prevBuckets []*bucketHandle
 }
 
-func (sw *slotWriter) insert(sl slot, db *DB) error {
+func (sw *slotWriter) insert(sl slot, idx *index) error {
 	if sw.slotIdx == slotsPerBucket {
-		nextBucket, err := db.createOverflowBucket()
+		nextBucket, err := idx.createOverflowBucket()
 		if err != nil {
 			return err
 		}
