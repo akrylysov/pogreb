@@ -175,6 +175,7 @@ func TestSimple(t *testing.T) {
 	if db.Count() != 0 {
 		t.Fatal()
 	}
+	assertNil(t, db.Close())
 }
 
 func TestEmptyKey(t *testing.T) {
