@@ -7,9 +7,7 @@ import (
 
 func TestIteratorEmpty(t *testing.T) {
 	db, err := openTestDB(nil)
-	if err != nil {
-		t.Fatal()
-	}
+	assertNil(t, err)
 	it := db.Items()
 	for i := 0; i < 8; i++ {
 		_, _, err := it.Next()
@@ -17,16 +15,12 @@ func TestIteratorEmpty(t *testing.T) {
 			t.Fatalf("expected %v; got %v", ErrIterationDone, err)
 		}
 	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
+	assertNil(t, db.Close())
 }
 
 func TestIterator(t *testing.T) {
 	db, err := openTestDB(nil)
-	if err != nil {
-		t.Fatal()
-	}
+	assertNil(t, err)
 
 	items := map[byte]bool{}
 	var i byte
@@ -43,9 +37,7 @@ func TestIterator(t *testing.T) {
 		if err == ErrIterationDone {
 			break
 		}
-		if err != nil {
-			t.Fatal(err)
-		}
+		assertNil(t, err)
 		if k, ok := items[key[0]]; !ok {
 			t.Fatalf("unknown key %v", k)
 		}
@@ -68,7 +60,5 @@ func TestIterator(t *testing.T) {
 		}
 	}
 
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
+	assertNil(t, db.Close())
 }

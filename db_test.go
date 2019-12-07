@@ -138,7 +138,7 @@ func TestSimple(t *testing.T) {
 	f, err := os.OpenFile(filepath.Join("test.db", lockName), os.O_RDONLY|os.O_CREATE, 0666)
 	assertNil(t, err)
 	assertNil(t, f.Close())
-	assertNil(t, os.Remove(filepath.Join("test.db", datafileName(0) + metaExt)))
+	assertNil(t, os.Remove(filepath.Join("test.db", datafileName(0)+metaExt)))
 	assertNil(t, os.Remove(filepath.Join("test.db", indexMetaName)))
 
 	// Open and check again
@@ -264,9 +264,7 @@ func TestWordsDict(t *testing.T) {
 	}
 	defer fwords.Close()
 	db, err := openTestDB(&Options{FileSystem: fs.Mem})
-	if err != nil {
-		t.Fatal(err)
-	}
+	assertNil(t, err)
 	scanner := bufio.NewScanner(fwords)
 	items := make(map[string]string)
 	for scanner.Scan() {

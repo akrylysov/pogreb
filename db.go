@@ -63,6 +63,12 @@ func Open(path string, opts *Options) (*DB, error) {
 		}
 		return nil, err
 	}
+	unlock := lock.Unlock
+	defer func() {
+		if unlock != nil {
+			_ = unlock()
+		}
+	}()
 	if acquiredExistingLock {
 		if err := backupNondataFiles(path); err != nil {
 			return nil, err
@@ -105,6 +111,7 @@ func Open(path string, opts *Options) (*DB, error) {
 	} else if opts.BackgroundSyncInterval == -1 {
 		db.syncWrites = true
 	}
+	unlock = nil
 	return db, nil
 }
 
