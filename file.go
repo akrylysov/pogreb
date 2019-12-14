@@ -22,6 +22,12 @@ func openFile(fsyst fs.FileSystem, name string, truncate bool) (*file, error) {
 	if err != nil {
 		return f, err
 	}
+	clean := fi.Close
+	defer func() {
+		if clean != nil {
+			_ = clean()
+		}
+	}()
 	f.MmapFile = fi
 	stat, err := fi.Stat()
 	if err != nil {
@@ -40,6 +46,7 @@ func openFile(fsyst fs.FileSystem, name string, truncate bool) (*file, error) {
 	if _, err := f.Seek(int64(headerSize), io.SeekStart); err != nil {
 		return nil, err
 	}
+	clean = nil
 	return f, err
 }
 

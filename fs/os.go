@@ -102,7 +102,7 @@ func (f *osfile) Mmap(fileSize int64) error {
 		return err
 	}
 
-	madviceRandom(data)
+	_ = madviceRandom(data)
 
 	f.data = data
 	f.mmapSize = mappedSize

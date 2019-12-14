@@ -15,7 +15,7 @@ var Mem = &memfs{files: map[string]*memfile{}}
 
 func (fs *memfs) OpenFile(name string, flag int, perm os.FileMode) (MmapFile, error) {
 	f := fs.files[name]
-	if f == nil || (flag & os.O_TRUNC) != 0 {
+	if f == nil || (flag&os.O_TRUNC) != 0 {
 		f = &memfile{}
 		fs.files[name] = f
 	} else if !f.closed {

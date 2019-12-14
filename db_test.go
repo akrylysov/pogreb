@@ -197,16 +197,13 @@ func TestEmptyValue(t *testing.T) {
 	if v, err := db.Get([]byte{1}); err != nil || v != nil {
 		t.Fatal(err)
 	}
-	if err := db.Put([]byte{1}, []byte{}); err != nil {
-		t.Fatal(err)
-	}
+	err = db.Put([]byte{1}, []byte{})
+	assertNil(t, err)
 	// Returns an empty slice if value is empty.
 	if v, err := db.Get([]byte{1}); err != nil || v == nil || len(v) != 0 {
 		t.Fatal(err)
 	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
+	assertNil(t, db.Close())
 }
 
 func TestDataRecycle(t *testing.T) {
@@ -218,12 +215,10 @@ func TestDataRecycle(t *testing.T) {
 	v, err := db.Get([]byte{1})
 	assertNil(t, err)
 	assertEqual(t, []byte{8}, v)
-	if err := db.Delete([]byte{1}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Put([]byte{1}, []byte{9}); err != nil {
-		t.Fatal(err)
-	}
+	err = db.Delete([]byte{1})
+	assertNil(t, err)
+	err = db.Put([]byte{1}, []byte{9})
+	assertNil(t, err)
 	assertEqual(t, []byte{8}, v)
 	assertNil(t, db.Close())
 }
@@ -247,14 +242,13 @@ func TestCorruptedIndex(t *testing.T) {
 
 	f, err := os.OpenFile(filepath.Join("test.db", indexMetaName), os.O_WRONLY, 0)
 	assertNil(t, err)
-	if _, err := f.WriteString("corrupted"); err != nil {
-		t.Fatal(err)
-	}
+	_, err = f.WriteString("corrupted")
+	assertNil(t, err)
 	assertNil(t, f.Close())
 
-	if _, err = Open("test.db", nil); err != errCorrupted {
-		t.Fatalf("expected %v; got %v", errCorrupted, err)
-	}
+	db, err = Open("test.db", nil)
+	assertNil(t, db)
+	assertEqual(t, errCorrupted, err)
 }
 
 func TestWordsDict(t *testing.T) {

@@ -63,10 +63,10 @@ func Open(path string, opts *Options) (*DB, error) {
 		}
 		return nil, err
 	}
-	unlock := lock.Unlock
+	clean := lock.Unlock
 	defer func() {
-		if unlock != nil {
-			_ = unlock()
+		if clean != nil {
+			_ = clean()
 		}
 	}()
 	if acquiredExistingLock {
@@ -111,7 +111,7 @@ func Open(path string, opts *Options) (*DB, error) {
 	} else if opts.BackgroundSyncInterval == -1 {
 		db.syncWrites = true
 	}
-	unlock = nil
+	clean = nil
 	return db, nil
 }
 
