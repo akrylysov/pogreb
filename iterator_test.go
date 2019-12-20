@@ -6,7 +6,7 @@ import (
 )
 
 func TestIteratorEmpty(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 	it := db.Items()
 	for i := 0; i < 8; i++ {
@@ -19,7 +19,7 @@ func TestIteratorEmpty(t *testing.T) {
 }
 
 func TestIterator(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 
 	items := map[byte]bool{}

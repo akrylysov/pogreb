@@ -18,10 +18,10 @@ func TestCompaction(t *testing.T) {
 		compactionMinFragmentation: 0.2,
 	}
 
-	db, err := openTestDB(opts)
+	db, err := createTestDB(opts)
 	assertNil(t, err)
 
-	// A single data file can fit 42 items (1 byte key / 1 byte value).
+	// A single data file can fit 42 items (12 bytes per item, 1 byte key, 1 byte value).
 	numFiles := func() int {
 		t.Helper()
 		var c int
@@ -70,11 +70,9 @@ func TestCompaction(t *testing.T) {
 		cm, err := db.Compact()
 		assertNil(t, err)
 		assertEqual(t, CompactionMetrics{CompactedFiles: 1, ReclaimedItems: 42, ReclaimedBytes: 504}, cm)
-		assertEqual(t, 2, numFiles())
+		assertEqual(t, 1, numFiles())
 		assertNil(t, db.datalog.files[0])
 		assertEqual(t, &datafileMeta{TotalKeys: 42}, db.datalog.files[1].meta)
-		// Compaction created an empty file, but it will be used for future writes.
-		assertEqual(t, &datafileMeta{}, db.datalog.files[2].meta)
 		// Compacted file was removed.
 		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, datafileName(0))))
 		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, datafileName(0))+metaExt))
@@ -86,15 +84,14 @@ func TestCompaction(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		assertEqual(t, 2, numFiles())
+		assertEqual(t, 1, numFiles())
 		assertEqual(t, &datafileMeta{TotalKeys: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.files[1].meta)
 		cm, err := db.Compact()
 		assertNil(t, err)
 		assertEqual(t, CompactionMetrics{CompactedFiles: 1, ReclaimedItems: 42, ReclaimedBytes: 504}, cm)
-		assertEqual(t, 2, numFiles())
-		assertEqual(t, &datafileMeta{}, db.datalog.files[0].meta)
+		assertEqual(t, 0, numFiles())
+		assertNil(t, db.datalog.files[0])
 		assertNil(t, db.datalog.files[1])
-		assertEqual(t, &datafileMeta{}, db.datalog.files[2].meta)
 	})
 
 	t.Run("no reclaimed", func(t *testing.T) {
@@ -120,7 +117,7 @@ func TestCompaction(t *testing.T) {
 		cm, err := db.Compact()
 		assertNil(t, err)
 		assertEqual(t, CompactionMetrics{CompactedFiles: 1, ReclaimedItems: 40, ReclaimedBytes: 480}, cm)
-		assertEqual(t, 8, numFiles())
+		assertEqual(t, 7, numFiles())
 	})
 
 	t.Run("compact multiple files", func(t *testing.T) {
@@ -132,7 +129,7 @@ func TestCompaction(t *testing.T) {
 		cm, err := db.Compact()
 		assertNil(t, err)
 		assertEqual(t, CompactionMetrics{CompactedFiles: 2, ReclaimedItems: 84, ReclaimedBytes: 1008}, cm)
-		assertEqual(t, 9, numFiles())
+		assertEqual(t, 7, numFiles())
 	})
 
 	for i = 0; i < n; i++ {

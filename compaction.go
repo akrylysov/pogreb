@@ -4,28 +4,24 @@ import (
 	"sync/atomic"
 )
 
-func (db *DB) updateIndexRecord(dstF *datafile, rec datafileRecord) (bool, error) {
+func (db *DB) moveRecord(rec datafileRecord) (bool, error) {
 	hash := db.hash(rec.key)
 	reclaimed := true
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	err := db.index.forEachBucket(db.index.bucketIndex(hash), func(b bucketHandle) (bool, error) {
-		for i := 0; i < slotsPerBucket; i++ {
-			sl := b.slots[i]
+		for i, sl := range b.slots {
 			if sl.offset == 0 {
 				return b.next == 0, nil
 			}
 			if hash == sl.hash && rec.offset == sl.offset && rec.fileID == sl.fileID {
-				// Index points to the record, copy the record to dstF.
-				dstOffset, err := dstF.append(rec.data) // TODO: batch writes
+				fileID, offset, err := db.datalog.writeRecord(rec.data) // TODO: batch writes
 				if err != nil {
 					return true, err
 				}
-				dstF.meta.TotalKeys++
-
 				// Update index.
-				b.slots[i].fileID = dstF.id
-				b.slots[i].offset = uint32(dstOffset)
+				b.slots[i].fileID = fileID
+				b.slots[i].offset = offset
 				reclaimed = false
 				return true, b.write()
 			}
@@ -47,13 +43,9 @@ func (db *DB) compact(f *datafile) (CompactionMetrics, error) {
 
 	db.mu.Lock()
 	f.meta.Full = true // Prevent writes to the compacted file.
-	dstF, err := dl.nextFreeFile()
 	db.mu.Unlock()
-	if err != nil {
-		return cm, err
-	}
 
-	// Write items from f to dstF.
+	// Move records from f to the current data file.
 	it, err := newDatafileIterator(f)
 	if err != nil {
 		return cm, err
@@ -66,7 +58,7 @@ func (db *DB) compact(f *datafile) (CompactionMetrics, error) {
 		if err != nil {
 			return cm, err
 		}
-		reclaimed, err := db.updateIndexRecord(dstF, rec)
+		reclaimed, err := db.moveRecord(rec)
 		if err != nil {
 			return cm, err
 		}
@@ -77,13 +69,6 @@ func (db *DB) compact(f *datafile) (CompactionMetrics, error) {
 	}
 
 	db.mu.Lock()
-	dstF.meta.Full = false // Enable writes to the new file.
-
-	// Update current file if was compacted.
-	if f == dl.curFile {
-		dl.curFile = dstF
-	}
-
 	err = dl.removeFile(f)
 	db.mu.Unlock()
 	if err != nil {

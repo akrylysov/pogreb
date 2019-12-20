@@ -28,6 +28,14 @@ func assertNil(t testing.TB, actual interface{}) {
 	}
 }
 
+func touchFile(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
 func init() {
 	SetLogger(log.New(ioutil.Discard, "", 0))
 }
@@ -47,7 +55,7 @@ func TestHeaderSize(t *testing.T) {
 	}
 }
 
-func openTestDB(opts *Options) (*DB, error) {
+func createTestDB(opts *Options) (*DB, error) {
 	path := "test.db"
 	files, err := ioutil.ReadDir(path)
 	if err != nil && !os.IsNotExist(err) {
@@ -60,7 +68,7 @@ func openTestDB(opts *Options) (*DB, error) {
 }
 
 func TestEmpty(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 	assertNil(t, db.Close())
 	db, err = Open("test.db", nil)
@@ -69,7 +77,7 @@ func TestEmpty(t *testing.T) {
 }
 
 func TestSimple(t *testing.T) {
-	db, err := openTestDB(&Options{maxDatafileSize: 1024})
+	db, err := createTestDB(&Options{maxDatafileSize: 1024})
 	assertNil(t, err)
 	var i byte
 	var n uint8 = 255
@@ -135,9 +143,7 @@ func TestSimple(t *testing.T) {
 	verifyKeysAndClose(0)
 
 	// Simulate crash.
-	f, err := os.OpenFile(filepath.Join("test.db", lockName), os.O_RDONLY|os.O_CREATE, 0666)
-	assertNil(t, err)
-	assertNil(t, f.Close())
+	assertNil(t, touchFile(filepath.Join("test.db", lockName)))
 	assertNil(t, os.Remove(filepath.Join("test.db", datafileName(0)+metaExt)))
 	assertNil(t, os.Remove(filepath.Join("test.db", indexMetaName)))
 
@@ -179,7 +185,7 @@ func TestSimple(t *testing.T) {
 }
 
 func TestEmptyKey(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 	if err := db.Put([]byte{}, []byte{1}); err != nil {
 		t.Fatal(err)
@@ -191,7 +197,7 @@ func TestEmptyKey(t *testing.T) {
 }
 
 func TestEmptyValue(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 	// Returns a nil value if key not found.
 	if v, err := db.Get([]byte{1}); err != nil || v != nil {
@@ -207,7 +213,7 @@ func TestEmptyValue(t *testing.T) {
 }
 
 func TestDataRecycle(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 	if err := db.Put([]byte{1}, []byte{8}); err != nil {
 		t.Fatal(err)
@@ -224,7 +230,7 @@ func TestDataRecycle(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 	assertNil(t, db.Close())
 	if _, err := db.Get([]byte{1}); err == nil {
@@ -236,7 +242,7 @@ func TestClose(t *testing.T) {
 }
 
 func TestCorruptedIndex(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 	assertNil(t, db.Close())
 
@@ -257,7 +263,7 @@ func TestWordsDict(t *testing.T) {
 		t.Skip("words file is not found")
 	}
 	defer fwords.Close()
-	db, err := openTestDB(&Options{FileSystem: fs.Mem})
+	db, err := createTestDB(&Options{FileSystem: fs.Mem})
 	assertNil(t, err)
 	scanner := bufio.NewScanner(fwords)
 	items := make(map[string]string)
@@ -282,7 +288,7 @@ func TestWordsDict(t *testing.T) {
 }
 
 func BenchmarkPut(b *testing.B) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(b, err)
 	b.ResetTimer()
 	k := []byte{1}
@@ -295,7 +301,7 @@ func BenchmarkPut(b *testing.B) {
 }
 
 func BenchmarkGet(b *testing.B) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(b, err)
 	k := []byte{1}
 	if err := db.Put(k, k); err != nil {

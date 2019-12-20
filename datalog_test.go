@@ -5,7 +5,7 @@ import (
 )
 
 func TestDatalog(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 
 	_, _, err = db.datalog.writeKeyValue([]byte{'1'}, []byte{'1'})
@@ -29,7 +29,7 @@ func TestDatalog(t *testing.T) {
 }
 
 func TestDatalogIterator(t *testing.T) {
-	db, err := openTestDB(nil)
+	db, err := createTestDB(nil)
 	assertNil(t, err)
 
 	listRecords := func() []datafileRecord {

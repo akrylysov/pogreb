@@ -108,29 +108,6 @@ func (dl *datalog) swapDatafile() error {
 	return nil
 }
 
-func (dl *datalog) nextFreeID() (uint16, error) {
-	for i, file := range dl.files {
-		if file == nil {
-			return uint16(i), nil
-		}
-	}
-	return 0, fmt.Errorf("number of data files exceeds %d", maxDatafiles)
-}
-
-func (dl *datalog) nextFreeFile() (*datafile, error) {
-	id, err := dl.nextFreeID()
-	if err != nil {
-		return nil, err
-	}
-	name := datafileName(id)
-	f, err := dl.openDatafile(filepath.Join(dl.opts.path, name), id)
-	if err != nil {
-		return nil, err
-	}
-	f.meta.Full = true
-	return f, nil
-}
-
 func (dl *datalog) removeFile(f *datafile) error {
 	dl.files[f.id] = nil
 
@@ -185,9 +162,7 @@ func (dl *datalog) del(sl slot) {
 	meta.DeletedBytes += encodedKeyValueSize(sl.kvSize())
 }
 
-func (dl *datalog) writeKeyValue(key []byte, value []byte) (uint16, uint32, error) {
-	data := encodeKeyValue(key, value)
-
+func (dl *datalog) writeRecord(data []byte) (uint16, uint32, error) {
 	if dl.curFile.meta.Full || uint32(dl.curFile.size)+uint32(len(data)) > dl.opts.maxDatafileSize {
 		dl.curFile.meta.Full = true
 		if err := dl.swapDatafile(); err != nil {
@@ -201,6 +176,10 @@ func (dl *datalog) writeKeyValue(key []byte, value []byte) (uint16, uint32, erro
 	}
 	dl.curFile.meta.TotalKeys++
 	return dl.curFile.id, uint32(off), nil
+}
+
+func (dl *datalog) writeKeyValue(key []byte, value []byte) (uint16, uint32, error) {
+	return dl.writeRecord(encodeKeyValue(key, value))
 }
 
 func (dl *datalog) sync() error {
@@ -266,7 +245,7 @@ func newDatalogIterator(files [maxDatafiles]*datafile) (*datalogIterator, error)
 	}
 
 	sort.Slice(dfs, func(i, j int) bool {
-		return dfs[i].modTime.Nanosecond() > dfs[j].modTime.Nanosecond()
+		return dfs[i].modTime.Nanosecond() < dfs[j].modTime.Nanosecond()
 	})
 
 	iterFiles := make([]*datafile, 0, len(dfs))
