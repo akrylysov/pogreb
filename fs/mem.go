@@ -21,6 +21,7 @@ func (fs *memfs) OpenFile(name string, flag int, perm os.FileMode) (MmapFile, er
 	} else if !f.closed {
 		return nil, os.ErrExist
 	} else {
+		f.offset = 0
 		f.closed = false
 	}
 	return f, nil
@@ -80,9 +81,13 @@ func (m *memfile) ReadAt(p []byte, off int64) (int, error) {
 	if m.closed {
 		return 0, os.ErrClosed
 	}
+	if off >= m.size {
+		return 0, io.EOF
+	}
 	n := len(p)
 	if int64(n) > m.size-off {
-		return 0, io.EOF
+		copy(p, m.buf[off:])
+		return int(m.size - off), io.EOF
 	}
 	copy(p, m.buf[off:off+int64(n)])
 	return n, nil
