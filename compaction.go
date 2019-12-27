@@ -4,11 +4,13 @@ import (
 	"sync/atomic"
 )
 
+const (
+	compactionMaxFiles = 2
+)
+
 func (db *DB) moveRecord(rec datafileRecord) (bool, error) {
 	hash := db.hash(rec.key)
 	reclaimed := true
-	db.mu.Lock()
-	defer db.mu.Unlock()
 	err := db.index.forEachBucket(db.index.bucketIndex(hash), func(b bucketHandle) (bool, error) {
 		for i, sl := range b.slots {
 			if sl.offset == 0 {
@@ -51,20 +53,25 @@ func (db *DB) compact(f *datafile) (CompactionMetrics, error) {
 		return cm, err
 	}
 	for {
-		rec, err := it.next()
+		err := func() error {
+			db.mu.Lock()
+			defer db.mu.Unlock()
+			rec, err := it.next()
+			if err != nil {
+				return err
+			}
+			reclaimed, err := db.moveRecord(rec)
+			if reclaimed {
+				cm.ReclaimedItems++
+				cm.ReclaimedBytes += len(rec.data)
+			}
+			return err
+		}()
 		if err == ErrIterationDone {
 			break
 		}
 		if err != nil {
 			return cm, err
-		}
-		reclaimed, err := db.moveRecord(rec)
-		if err != nil {
-			return cm, err
-		}
-		if reclaimed {
-			cm.ReclaimedItems++
-			cm.ReclaimedBytes += len(rec.data)
 		}
 	}
 
@@ -104,6 +111,9 @@ func (db *DB) Compact() (CompactionMetrics, error) {
 		cm.CompactedFiles++
 		cm.ReclaimedItems += fcm.ReclaimedItems
 		cm.ReclaimedBytes += fcm.ReclaimedBytes
+		if cm.CompactedFiles == compactionMaxFiles {
+			return cm, nil
+		}
 	}
 	return cm, nil
 }

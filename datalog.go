@@ -129,7 +129,7 @@ func (dl *datalog) removeFile(f *datafile) error {
 	return nil
 }
 
-func (dl *datalog) ReadKeyValue(sl slot) ([]byte, []byte, error) {
+func (dl *datalog) readKeyValue(sl slot) ([]byte, []byte, error) {
 	off := int64(sl.offset) + 6 // Skip key size and value size.
 	f := dl.files[sl.fileID]
 	keyValue, err := f.Slice(off, off+int64(sl.kvSize()))

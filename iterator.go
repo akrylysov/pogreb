@@ -37,7 +37,7 @@ func (it *ItemIterator) Next() ([]byte, []byte, error) {
 					if sl.offset == 0 {
 						return true, nil
 					}
-					key, value, err := it.db.datalog.ReadKeyValue(sl)
+					key, value, err := it.db.datalog.readKeyValue(sl)
 					if err != nil {
 						return true, err
 					}
