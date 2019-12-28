@@ -202,7 +202,7 @@ func (dl *datalog) close() error {
 	return nil
 }
 
-func (dl *datalog) pickForCompaction() (*datafile, error) {
+func (dl *datalog) pickForCompaction() *datafile {
 	for _, f := range dl.files {
 		if f == nil {
 			continue
@@ -214,9 +214,9 @@ func (dl *datalog) pickForCompaction() (*datafile, error) {
 		if fragmentation < dl.opts.compactionMinFragmentation {
 			continue
 		}
-		return f, nil
+		return f
 	}
-	return nil, nil
+	return nil
 }
 
 type datalogIterator struct {

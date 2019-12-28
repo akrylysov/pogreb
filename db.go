@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/akrylysov/pogreb/fs"
@@ -40,8 +39,9 @@ type DB struct {
 	lock              fs.LockFile
 	hashSeed          uint32
 	metrics           Metrics
-	cancelSyncer      context.CancelFunc
 	syncWrites        bool
+	cancelBgWorker    context.CancelFunc
+	closeWg           sync.WaitGroup
 	compactionRunning int32
 }
 
@@ -83,11 +83,12 @@ func Open(path string, opts *Options) (*DB, error) {
 		return nil, err
 	}
 	db := &DB{
-		opts:    opts,
-		index:   index,
-		datalog: datalog,
-		lock:    lock,
-		metrics: newMetrics(),
+		opts:       opts,
+		index:      index,
+		datalog:    datalog,
+		lock:       lock,
+		metrics:    newMetrics(),
+		syncWrites: opts.BackgroundSyncInterval == -1,
 	}
 	if index.count() == 0 {
 		seed, err := hash.RandSeed()
@@ -106,10 +107,8 @@ func Open(path string, opts *Options) (*DB, error) {
 			return nil, err
 		}
 	}
-	if opts.BackgroundSyncInterval > 0 {
-		db.startSyncer(opts.BackgroundSyncInterval)
-	} else if opts.BackgroundSyncInterval == -1 {
-		db.syncWrites = true
+	if db.opts.BackgroundSyncInterval > 0 || db.opts.BackgroundCompactionInterval > 0 {
+		db.startBackgroundWorker()
 	}
 	clean = nil
 	return db, nil
@@ -121,7 +120,7 @@ func cloneBytes(src []byte) []byte {
 	return dst
 }
 
-func (db *DB) writeManifest() error {
+func (db *DB) writeMeta() error {
 	m := dbMeta{
 		HashSeed: db.hashSeed,
 	}
@@ -141,24 +140,53 @@ func (db *DB) hash(data []byte) uint32 {
 	return hash.Sum32WithSeed(data, db.hashSeed)
 }
 
-func (db *DB) startSyncer(interval time.Duration) {
+func (db *DB) startBackgroundWorker() {
 	ctx, cancel := context.WithCancel(context.Background())
-	db.cancelSyncer = cancel
+	db.cancelBgWorker = cancel
+	db.closeWg.Add(1)
 	go func() {
+		defer db.closeWg.Done()
+		var syncC <-chan time.Time
+		if db.opts.BackgroundSyncInterval > 0 {
+			syncT := time.NewTicker(db.opts.BackgroundSyncInterval)
+			syncC = syncT.C
+			defer syncT.Stop()
+		}
+		var compactC <-chan time.Time
+		if db.opts.BackgroundCompactionInterval > 0 {
+			compactT := time.NewTicker(db.opts.BackgroundCompactionInterval)
+			compactC = compactT.C
+			defer compactT.Stop()
+		}
 		var lastModifications int64
+		updateLastModification := func() bool {
+			modifications := db.metrics.Puts.Value() + db.metrics.Dels.Value()
+			if modifications != lastModifications {
+				lastModifications = modifications
+				return true
+			}
+			return false
+		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			default:
-				modifications := db.metrics.Puts.Value() + db.metrics.Dels.Value()
-				if modifications != lastModifications {
-					if err := db.Sync(); err != nil {
-						logger.Printf("error synchronizing databse: %v", err)
-					}
-					lastModifications = modifications
+			case <-syncC:
+				if !updateLastModification() {
+					break
 				}
-				time.Sleep(interval)
+				if err := db.Sync(); err != nil {
+					logger.Printf("error synchronizing databse: %v", err)
+				}
+			case <-compactC:
+				if !updateLastModification() {
+					break
+				}
+				if cr, err := db.Compact(); err != nil {
+					logger.Printf("error compacting databse: %v", err)
+				} else if cr.CompactedFiles > 0 {
+					logger.Printf("compacted databse: %+v", cr)
+				}
 			}
 		}
 	}()
@@ -299,13 +327,11 @@ func (db *DB) Delete(key []byte) error {
 func (db *DB) Close() error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	if atomic.LoadInt32(&db.compactionRunning) == 1 {
-		return errBusy
+	if db.cancelBgWorker != nil {
+		db.cancelBgWorker()
 	}
-	if db.cancelSyncer != nil {
-		db.cancelSyncer()
-	}
-	if err := db.writeManifest(); err != nil {
+	db.closeWg.Wait()
+	if err := db.writeMeta(); err != nil {
 		return err
 	}
 	if err := db.datalog.close(); err != nil {

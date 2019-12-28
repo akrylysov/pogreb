@@ -9,11 +9,16 @@ import (
 
 // Options holds the optional DB parameters.
 type Options struct {
-	// BackgroundSyncInterval sets the amount of time between background fsync() calls.
+	// BackgroundSyncInterval sets the amount of time between background Sync() calls.
 	//
 	// Setting the value to 0 disables the automatic background synchronization.
-	// Setting the value to -1 makes the DB call fsync() after every write operation.
+	// Setting the value to -1 makes the DB call Sync() after every write operation.
 	BackgroundSyncInterval time.Duration
+
+	// BackgroundCompactionInterval sets the amount of time between background Compact() calls.
+	//
+	// Setting the value to 0 disables the automatic background compaction.
+	BackgroundCompactionInterval time.Duration
 
 	FileSystem fs.FileSystem
 

@@ -30,7 +30,7 @@ func TestRecoveryCompaction(t *testing.T) {
 
 	cm, err := db.Compact()
 	assertNil(t, err)
-	assertEqual(t, CompactionMetrics{CompactedFiles: 1, ReclaimedItems: 41, ReclaimedBytes: 492}, cm)
+	assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedItems: 41, ReclaimedBytes: 492}, cm)
 	assertNil(t, db.datalog.files[0]) // Items were moved from file 0 to file 1.
 	assertEqual(t, &datafileMeta{TotalKeys: 3, DeletedKeys: 1, DeletedBytes: 12}, db.datalog.files[1].meta)
 

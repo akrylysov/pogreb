@@ -33,14 +33,14 @@ func (db *DB) moveRecord(rec datafileRecord) (bool, error) {
 	return reclaimed, err
 }
 
-type CompactionMetrics struct {
+type CompactionResult struct {
 	CompactedFiles int
 	ReclaimedItems int
 	ReclaimedBytes int
 }
 
-func (db *DB) compact(f *datafile) (CompactionMetrics, error) {
-	cm := CompactionMetrics{}
+func (db *DB) compact(f *datafile) (CompactionResult, error) {
+	cr := CompactionResult{}
 	dl := db.datalog
 
 	db.mu.Lock()
@@ -50,7 +50,7 @@ func (db *DB) compact(f *datafile) (CompactionMetrics, error) {
 	// Move records from f to the current data file.
 	it, err := newDatafileIterator(f)
 	if err != nil {
-		return cm, err
+		return cr, err
 	}
 	for {
 		err := func() error {
@@ -62,8 +62,8 @@ func (db *DB) compact(f *datafile) (CompactionMetrics, error) {
 			}
 			reclaimed, err := db.moveRecord(rec)
 			if reclaimed {
-				cm.ReclaimedItems++
-				cm.ReclaimedBytes += len(rec.data)
+				cr.ReclaimedItems++
+				cr.ReclaimedBytes += len(rec.data)
 			}
 			return err
 		}()
@@ -71,7 +71,7 @@ func (db *DB) compact(f *datafile) (CompactionMetrics, error) {
 			break
 		}
 		if err != nil {
-			return cm, err
+			return cr, err
 		}
 	}
 
@@ -79,41 +79,38 @@ func (db *DB) compact(f *datafile) (CompactionMetrics, error) {
 	err = dl.removeFile(f)
 	db.mu.Unlock()
 	if err != nil {
-		return cm, err
+		return cr, err
 	}
 
-	return cm, nil
+	return cr, nil
 }
 
 // Compact compacts the DB. Deleted and overwritten items are discarded.
-func (db *DB) Compact() (CompactionMetrics, error) {
-	cm := CompactionMetrics{}
+func (db *DB) Compact() (CompactionResult, error) {
+	cr := CompactionResult{}
 	if !atomic.CompareAndSwapInt32(&db.compactionRunning, 0, 1) {
-		return cm, errBusy
+		return cr, errBusy
 	}
 	defer func() {
 		atomic.StoreInt32(&db.compactionRunning, 0)
 	}()
 	for {
 		db.mu.RLock()
-		f, err := db.datalog.pickForCompaction()
+		f := db.datalog.pickForCompaction()
 		db.mu.RUnlock()
-		if err != nil {
-			return cm, err
-		}
 		if f == nil {
 			break
 		}
-		fcm, err := db.compact(f)
+		fcr, err := db.compact(f)
 		if err != nil {
-			return cm, err
+			return cr, err
 		}
-		cm.CompactedFiles++
-		cm.ReclaimedItems += fcm.ReclaimedItems
-		cm.ReclaimedBytes += fcm.ReclaimedBytes
-		if cm.CompactedFiles == compactionMaxFiles {
-			return cm, nil
+		cr.CompactedFiles++
+		cr.ReclaimedItems += fcr.ReclaimedItems
+		cr.ReclaimedBytes += fcr.ReclaimedBytes
+		if cr.CompactedFiles == compactionMaxFiles {
+			break
 		}
 	}
-	return cm, nil
+	return cr, nil
 }

@@ -56,7 +56,7 @@ if err != nil {
 
 ### Reading from a database
 
-Use the `DB.Get()` function to retrieve the inserted value:
+To retrieve the inserted value, use the `DB.Get()` function:
 
 ```go
 val, err := db.Get([]byte("testKey"))
@@ -68,7 +68,7 @@ log.Printf("%s", val)
 
 ### Iterating over items
 
-Use the `DB.Items()` function which returns a new instance of `ItemIterator`:
+To iterate over items, use `ItemIterator` returned by `DB.Items()`:
 
 ```go
 it := db.Items()
