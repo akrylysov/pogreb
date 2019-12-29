@@ -137,7 +137,7 @@ func (dl *datalog) readKeyValue(sl slot) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 	/*keyValue := make([]byte, sl.kvSize())
-	_, err := f.ReadAt(keyValue, sl.kvOffset)
+	_, err := f.ReadAt(keyValue, off)
 	if err != nil {
 		return nil, nil, err
 	}*/
@@ -149,7 +149,7 @@ func (dl *datalog) readKey(sl slot) ([]byte, error) {
 	f := dl.files[sl.fileID]
 	return f.Slice(off, off+int64(sl.keySize))
 	/*key := make([]byte, sl.keySize)
-	_, err := f.ReadAt(key, sl.kvOffset)
+	_, err := f.ReadAt(key, off)
 	if err != nil {
 		return nil, err
 	}

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/akrylysov/pogreb/fs"
 )
@@ -26,6 +27,18 @@ func assertNil(t testing.TB, actual interface{}) {
 	if actual != nil && !reflect.ValueOf(actual).IsNil() {
 		t.Fatalf("expected nil; got %v", actual)
 	}
+}
+
+func completeWithin(t testing.TB, waitDur time.Duration, cond func() bool) {
+	t.Helper()
+	start := time.Now()
+	for time.Since(start) < waitDur {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond * 10)
+	}
+	t.Fatalf("expected to complete withing %v", waitDur)
 }
 
 func touchFile(path string) error {

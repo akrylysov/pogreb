@@ -4,11 +4,28 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func fileExists(name string) bool {
 	_, err := os.Stat(name)
 	return !os.IsNotExist(err)
+}
+
+func countDatafiles(t *testing.T, db *DB) int {
+	t.Helper()
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	var c int
+	for _, f := range db.datalog.files {
+		if f != nil {
+			c++
+			if f.meta == nil {
+				t.Fatal()
+			}
+		}
+	}
+	return c
 }
 
 func TestCompaction(t *testing.T) {
@@ -23,17 +40,7 @@ func TestCompaction(t *testing.T) {
 
 	// A single data file can fit 42 items (12 bytes per item, 1 byte key, 1 byte value).
 	numFiles := func() int {
-		t.Helper()
-		var c int
-		for _, f := range db.datalog.files {
-			if f != nil {
-				c++
-				if f.meta == nil {
-					t.Fatal()
-				}
-			}
-		}
-		return c
+		return countDatafiles(t, db)
 	}
 
 	t.Run("empty", func(t *testing.T) {
@@ -140,6 +147,30 @@ func TestCompaction(t *testing.T) {
 		assertNil(t, err)
 		assertEqual(t, []byte{i}, v)
 	}
+
+	assertNil(t, db.Close())
+}
+
+func TestBackgroundCompaction(t *testing.T) {
+	opts := &Options{
+		BackgroundCompactionInterval: time.Millisecond,
+		maxDatafileSize:              1024,
+		compactionMinDatafileSize:    512,
+		compactionMinFragmentation:   0.2,
+	}
+
+	db, err := createTestDB(opts)
+	assertNil(t, err)
+
+	for i := 0; i < 128; i++ {
+		if err := db.Put([]byte{1}, []byte{1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	completeWithin(t, time.Minute, func() bool {
+		return countDatafiles(t, db) == 1
+	})
 
 	assertNil(t, db.Close())
 }

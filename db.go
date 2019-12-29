@@ -140,24 +140,27 @@ func (db *DB) hash(data []byte) uint32 {
 	return hash.Sum32WithSeed(data, db.hashSeed)
 }
 
+func newNullableTicker(d time.Duration) (<-chan time.Time, func()) {
+	if d > 0 {
+		t := time.NewTicker(d)
+		return t.C, t.Stop
+	}
+	return nil, func() {}
+}
+
 func (db *DB) startBackgroundWorker() {
 	ctx, cancel := context.WithCancel(context.Background())
 	db.cancelBgWorker = cancel
 	db.closeWg.Add(1)
+
 	go func() {
 		defer db.closeWg.Done()
-		var syncC <-chan time.Time
-		if db.opts.BackgroundSyncInterval > 0 {
-			syncT := time.NewTicker(db.opts.BackgroundSyncInterval)
-			syncC = syncT.C
-			defer syncT.Stop()
-		}
-		var compactC <-chan time.Time
-		if db.opts.BackgroundCompactionInterval > 0 {
-			compactT := time.NewTicker(db.opts.BackgroundCompactionInterval)
-			compactC = compactT.C
-			defer compactT.Stop()
-		}
+
+		syncC, syncStop := newNullableTicker(db.opts.BackgroundSyncInterval)
+		defer syncStop()
+		compactC, compactStop := newNullableTicker(db.opts.BackgroundCompactionInterval)
+		defer compactStop()
+
 		var lastModifications int64
 		updateLastModification := func() bool {
 			modifications := db.metrics.Puts.Value() + db.metrics.Dels.Value()
@@ -167,6 +170,7 @@ func (db *DB) startBackgroundWorker() {
 			}
 			return false
 		}
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -325,12 +329,12 @@ func (db *DB) Delete(key []byte) error {
 
 // Close closes the DB.
 func (db *DB) Close() error {
-	db.mu.Lock()
-	defer db.mu.Unlock()
 	if db.cancelBgWorker != nil {
 		db.cancelBgWorker()
 	}
 	db.closeWg.Wait()
+	db.mu.Lock()
+	defer db.mu.Unlock()
 	if err := db.writeMeta(); err != nil {
 		return err
 	}
