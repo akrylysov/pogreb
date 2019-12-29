@@ -94,6 +94,10 @@ func (f *file) append(data []byte) (int64, error) {
 }
 
 func (f *file) truncate(size uint32) error {
+	// Truncating memory-mapped file will fail on Windows. Unmap it first.
+	if err := f.Mmap(0); err != nil {
+		return err
+	}
 	if err := f.Truncate(int64(size)); err != nil {
 		return err
 	}
