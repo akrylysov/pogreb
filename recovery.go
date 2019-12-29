@@ -1,9 +1,12 @@
 package pogreb
 
 import (
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
+	"time"
 )
 
 func backupNondataFiles(path string) error {
@@ -36,11 +39,82 @@ func backupNondataFiles(path string) error {
 	return nil
 }
 
+type recoveryIterator struct {
+	files []*datafile
+	dit   *datafileIterator
+}
+
+func newRecoveryIterator(files [maxDatafiles]*datafile) (*recoveryIterator, error) {
+	// Sort data file by last modified time.
+	var dfs []struct {
+		f       *datafile
+		modTime time.Time
+	}
+	for _, f := range files {
+		if f == nil {
+			continue
+		}
+		stat, err := f.MmapFile.Stat()
+		if err != nil {
+			return nil, err
+		}
+		dfs = append(dfs, struct {
+			f       *datafile
+			modTime time.Time
+		}{f: f, modTime: stat.ModTime()})
+	}
+
+	sort.Slice(dfs, func(i, j int) bool {
+		return dfs[i].modTime.Nanosecond() < dfs[j].modTime.Nanosecond()
+	})
+
+	iterFiles := make([]*datafile, 0, len(dfs))
+	for _, df := range dfs {
+		iterFiles = append(iterFiles, df.f)
+	}
+
+	return &recoveryIterator{
+		files: iterFiles,
+	}, nil
+}
+
+func (it *recoveryIterator) next() (datafileRecord, error) {
+	for {
+		if it.dit == nil {
+			if len(it.files) == 0 {
+				return datafileRecord{}, ErrIterationDone
+			}
+			var err error
+			it.dit, err = newDatafileIterator(it.files[0])
+			if err != nil {
+				return datafileRecord{}, err
+			}
+			it.files = it.files[1:]
+		}
+		rec, err := it.dit.next()
+		if err == io.EOF || err == io.ErrUnexpectedEOF || err == errCorrupted {
+			// Truncate file to the last valid offset.
+			if err := it.dit.f.truncate(it.dit.offset); err != nil {
+				return datafileRecord{}, err
+			}
+			err = ErrIterationDone
+		}
+		if err == ErrIterationDone {
+			it.dit = nil
+			continue
+		}
+		if err != nil {
+			return datafileRecord{}, err
+		}
+		return rec, nil
+	}
+}
+
 func (db *DB) recover() error {
 	logger.Println("started recovery")
 
 	logger.Println("rebuilding index...")
-	it, err := newDatalogIterator(db.datalog.files)
+	it, err := newRecoveryIterator(db.datalog.files)
 	if err != nil {
 		return err
 	}

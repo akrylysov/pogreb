@@ -3,6 +3,7 @@ package pogreb
 import (
 	"bufio"
 	"encoding/binary"
+	"flag"
 	"io/ioutil"
 	"log"
 	"os"
@@ -49,8 +50,22 @@ func touchFile(path string) error {
 	return f.Close()
 }
 
-func init() {
-	SetLogger(log.New(ioutil.Discard, "", 0))
+func appendFile(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0640)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(data)
+	return err
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if !testing.Verbose() {
+		SetLogger(log.New(ioutil.Discard, "", 0))
+	}
+	os.Exit(m.Run())
 }
 
 func TestBucketSize(t *testing.T) {
@@ -222,6 +237,18 @@ func TestEmptyValue(t *testing.T) {
 	if v, err := db.Get([]byte{1}); err != nil || v == nil || len(v) != 0 {
 		t.Fatal(err)
 	}
+	assertNil(t, db.Close())
+}
+
+func TestEmptyKeyValue(t *testing.T) {
+	db, err := createTestDB(nil)
+	assertNil(t, err)
+	if err := db.Put([]byte{}, []byte{}); err != nil {
+		t.Fatal(err)
+	}
+	v, err := db.Get([]byte{})
+	assertNil(t, err)
+	assertEqual(t, []byte{}, v)
 	assertNil(t, db.Close())
 }
 

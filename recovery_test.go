@@ -1,9 +1,104 @@
 package pogreb
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 )
+
+func TestRecovery(t *testing.T) {
+	dfPath := filepath.Join("test.db", datafileName(0))
+	testCases := []struct {
+		name string
+		fn   func() error
+	}{
+		{
+			name: "all zeroes",
+			fn: func() error {
+				return appendFile(dfPath, make([]byte, 128))
+			},
+		},
+		{
+			name: "partial kv size",
+			fn: func() error {
+				return appendFile(dfPath, []byte{1})
+			},
+		},
+		{
+			name: "only kv size",
+			fn: func() error {
+				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0})
+			},
+		},
+		{
+			name: "kv size and key",
+			fn: func() error {
+				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1})
+			},
+		},
+		{
+			name: "kv size, key, value",
+			fn: func() error {
+				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1})
+			},
+		},
+		{
+			name: "kv size, key, value, partial crc32",
+			fn: func() error {
+				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 40})
+			},
+		},
+		{
+			name: "kv size, key, value, invalid crc32",
+			fn: func() error {
+				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 40, 19, 197, 0})
+			},
+		},
+		{
+			name: "corrupted and not corrupted record",
+			fn: func() error {
+				if err := appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 40, 19, 197, 0}); err != nil {
+					return err
+				}
+				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12})
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(fmt.Sprintf("case %s", testCase.name), func(t *testing.T) {
+			db, err := createTestDB(nil)
+			assertNil(t, err)
+			// Fill file 0.
+			var i uint8
+			for i = 0; i < 128; i++ {
+				assertNil(t, db.Put([]byte{i}, []byte{i}))
+			}
+			assertEqual(t, uint32(128), db.Count())
+			assertNil(t, db.Close())
+
+			// Simulate crash.
+			assertNil(t, touchFile(filepath.Join("test.db", lockName)))
+
+			assertNil(t, testCase.fn())
+
+			db, err = Open("test.db", nil)
+			assertNil(t, err)
+			assertEqual(t, uint32(128), db.Count())
+			assertNil(t, db.Close())
+
+			db, err = Open("test.db", nil)
+			assertNil(t, err)
+			assertEqual(t, uint32(128), db.Count())
+			for i = 0; i < 128; i++ {
+				v, err := db.Get([]byte{i})
+				assertNil(t, err)
+				assertEqual(t, []byte{i}, v)
+			}
+			assertNil(t, db.Close())
+		})
+	}
+}
 
 func TestRecoveryCompaction(t *testing.T) {
 	opts := &Options{
@@ -69,6 +164,65 @@ func TestRecoveryCompaction(t *testing.T) {
 	v, err = db.Get([]byte{1})
 	assertNil(t, err)
 	assertEqual(t, []byte{2}, v)
+
+	assertNil(t, db.Close())
+}
+
+func TestRecoveryIterator(t *testing.T) {
+	db, err := createTestDB(nil)
+	assertNil(t, err)
+
+	listRecords := func() []datafileRecord {
+		var records []datafileRecord
+		it, err := newRecoveryIterator(db.datalog.files)
+		assertNil(t, err)
+		for {
+			rec, err := it.next()
+			if err == ErrIterationDone {
+				break
+			}
+			assertNil(t, err)
+			records = append(records, rec)
+		}
+		return records
+	}
+
+	if len(listRecords()) != 0 {
+		t.Fatal()
+	}
+
+	if err := db.Put([]byte{1}, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t,
+		[]datafileRecord{
+			{0, 512, []byte{1}, []byte{1}, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}},
+		},
+		listRecords(),
+	)
+
+	if err := db.Put([]byte{1}, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t,
+		[]datafileRecord{
+			{0, 512, []byte{1}, []byte{1}, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}},
+			{0, 524, []byte{1}, []byte{1}, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}},
+		},
+		listRecords(),
+	)
+
+	if err := db.Put([]byte{2}, []byte{2}); err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t,
+		[]datafileRecord{
+			{0, 512, []byte{1}, []byte{1}, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}},
+			{0, 524, []byte{1}, []byte{1}, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}},
+			{0, 536, []byte{2}, []byte{2}, []byte{1, 0, 1, 0, 0, 0, 2, 2, 252, 15, 236, 190}},
+		},
+		listRecords(),
+	)
 
 	assertNil(t, db.Close())
 }

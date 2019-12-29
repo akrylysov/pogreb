@@ -6,10 +6,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -217,68 +215,4 @@ func (dl *datalog) pickForCompaction() *datafile {
 		return f
 	}
 	return nil
-}
-
-type datalogIterator struct {
-	files []*datafile
-	dit   *datafileIterator
-}
-
-func newDatalogIterator(files [maxDatafiles]*datafile) (*datalogIterator, error) {
-	// Sort data file by last modified time.
-	var dfs []struct {
-		f       *datafile
-		modTime time.Time
-	}
-	for _, f := range files {
-		if f == nil {
-			continue
-		}
-		stat, err := f.MmapFile.Stat()
-		if err != nil {
-			return nil, err
-		}
-		dfs = append(dfs, struct {
-			f       *datafile
-			modTime time.Time
-		}{f: f, modTime: stat.ModTime()})
-	}
-
-	sort.Slice(dfs, func(i, j int) bool {
-		return dfs[i].modTime.Nanosecond() < dfs[j].modTime.Nanosecond()
-	})
-
-	iterFiles := make([]*datafile, 0, len(dfs))
-	for _, df := range dfs {
-		iterFiles = append(iterFiles, df.f)
-	}
-
-	return &datalogIterator{
-		files: iterFiles,
-	}, nil
-}
-
-func (it *datalogIterator) next() (datafileRecord, error) {
-	for {
-		if it.dit == nil {
-			if len(it.files) == 0 {
-				return datafileRecord{}, ErrIterationDone
-			}
-			var err error
-			it.dit, err = newDatafileIterator(it.files[0])
-			if err != nil {
-				return datafileRecord{}, err
-			}
-			it.files = it.files[1:]
-		}
-		rec, err := it.dit.next()
-		if err == ErrIterationDone {
-			it.dit = nil
-			continue
-		}
-		if err != nil {
-			return datafileRecord{}, err
-		}
-		return rec, nil
-	}
 }

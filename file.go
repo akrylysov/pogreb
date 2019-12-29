@@ -92,3 +92,11 @@ func (f *file) append(data []byte) (int64, error) {
 	f.size += int64(len(data))
 	return off, f.Mmap(f.size)
 }
+
+func (f *file) truncate(size uint32) error {
+	if err := f.Truncate(int64(size)); err != nil {
+		return err
+	}
+	f.size = int64(size)
+	return f.Mmap(f.size)
+}

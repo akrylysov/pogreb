@@ -41,7 +41,7 @@ func encodeKeyValue(key []byte, value []byte) []byte {
 	binary.LittleEndian.PutUint32(data[2:], uint32(len(value)))
 	copy(data[6:], key)
 	copy(data[6+len(key):], value)
-	checksum := crc32.ChecksumIEEE(data[6 : 6+len(key)+len(value)])
+	checksum := crc32.ChecksumIEEE(data[:6+len(key)+len(value)])
 	binary.LittleEndian.PutUint32(data[size-4:size], checksum)
 	return data
 }
@@ -82,7 +82,7 @@ func (it *datafileIterator) next() (datafileRecord, error) {
 		return datafileRecord{}, err
 	}
 	checksum := binary.LittleEndian.Uint32(data[len(data)-4:])
-	if checksum != crc32.ChecksumIEEE(data[6:len(data)-4]) {
+	if checksum != crc32.ChecksumIEEE(data[:len(data)-4]) {
 		return datafileRecord{}, errCorrupted
 	}
 	offset := it.offset
