@@ -162,30 +162,20 @@ func (db *DB) startBackgroundWorker() {
 		defer compactStop()
 
 		var lastModifications int64
-		updateLastModification := func() bool {
-			modifications := db.metrics.Puts.Value() + db.metrics.Dels.Value()
-			if modifications != lastModifications {
-				lastModifications = modifications
-				return true
-			}
-			return false
-		}
-
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-syncC:
-				if !updateLastModification() {
+				modifications := db.metrics.Puts.Value() + db.metrics.Dels.Value()
+				if modifications == lastModifications {
 					break
 				}
+				lastModifications = modifications
 				if err := db.Sync(); err != nil {
 					logger.Printf("error synchronizing databse: %v", err)
 				}
 			case <-compactC:
-				if !updateLastModification() {
-					break
-				}
 				if cr, err := db.Compact(); err != nil {
 					logger.Printf("error compacting databse: %v", err)
 				} else if cr.CompactedFiles > 0 {
