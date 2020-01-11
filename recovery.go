@@ -5,8 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
-	"time"
 )
 
 func backupNondataFiles(path string) error {
@@ -39,42 +37,20 @@ func backupNondataFiles(path string) error {
 	return nil
 }
 
+// recoveryIterator iterates over records of all datalog files in insertion order.
+// Corrupted files are truncated to the last valid record.
 type recoveryIterator struct {
 	files []*datafile
 	dit   *datafileIterator
 }
 
-func newRecoveryIterator(files [maxDatafiles]*datafile) (*recoveryIterator, error) {
-	// Sort data file by last modified time.
-	var dfs []struct {
-		f       *datafile
-		modTime time.Time
+func newRecoveryIterator(dl *datalog) (*recoveryIterator, error) {
+	files, err := dl.filesByModification()
+	if err != nil {
+		return nil, err
 	}
-	for _, f := range files {
-		if f == nil {
-			continue
-		}
-		stat, err := f.MmapFile.Stat()
-		if err != nil {
-			return nil, err
-		}
-		dfs = append(dfs, struct {
-			f       *datafile
-			modTime time.Time
-		}{f: f, modTime: stat.ModTime()})
-	}
-
-	sort.Slice(dfs, func(i, j int) bool {
-		return dfs[i].modTime.Nanosecond() < dfs[j].modTime.Nanosecond()
-	})
-
-	iterFiles := make([]*datafile, 0, len(dfs))
-	for _, df := range dfs {
-		iterFiles = append(iterFiles, df.f)
-	}
-
 	return &recoveryIterator{
-		files: iterFiles,
+		files: files,
 	}, nil
 }
 
@@ -97,6 +73,11 @@ func (it *recoveryIterator) next() (datafileRecord, error) {
 			if err := it.dit.f.truncate(it.dit.offset); err != nil {
 				return datafileRecord{}, err
 			}
+			fi, fierr := it.dit.f.Stat()
+			if fierr != nil {
+				return datafileRecord{}, fierr
+			}
+			logger.Printf("truncated data file %s to offset %d", fi.Name(), it.dit.offset)
 			err = ErrIterationDone
 		}
 		if err == ErrIterationDone {
@@ -114,7 +95,7 @@ func (db *DB) recover() error {
 	logger.Println("started recovery")
 
 	logger.Println("rebuilding index...")
-	it, err := newRecoveryIterator(db.datalog.files)
+	it, err := newRecoveryIterator(db.datalog)
 	if err != nil {
 		return err
 	}
@@ -128,17 +109,23 @@ func (db *DB) recover() error {
 		}
 
 		h := db.hash(rec.key)
-		sl := slot{
-			hash:      h,
-			fileID:    rec.fileID,
-			keySize:   uint16(len(rec.key)),
-			valueSize: uint32(len(rec.value)),
-			offset:    rec.offset,
+		if rec.rtype == recordTypePut {
+			sl := slot{
+				hash:      h,
+				fileID:    rec.fileID,
+				keySize:   uint16(len(rec.key)),
+				valueSize: uint32(len(rec.value)),
+				offset:    rec.offset,
+			}
+			if err := db.put(sl, rec.key); err != nil {
+				return err
+			}
+			db.datalog.files[rec.fileID].meta.TotalRecords++
+		} else {
+			if err := db.del(h, rec.key); err != nil {
+				return err
+			}
 		}
-		if err := db.put(sl, rec.key); err != nil {
-			return err
-		}
-		db.datalog.files[rec.fileID].meta.TotalKeys++
 	}
 
 	logger.Println("successfully recovered database")

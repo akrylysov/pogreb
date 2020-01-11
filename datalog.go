@@ -6,8 +6,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -15,6 +17,7 @@ const (
 	dataPrefix   = "data_"
 )
 
+// datalog is a write-ahead log.
 type datalog struct {
 	opts    *Options
 	curFile *datafile
@@ -154,10 +157,21 @@ func (dl *datalog) readKey(sl slot) ([]byte, error) {
 	return key, nil*/
 }
 
-func (dl *datalog) del(sl slot) {
+func (dl *datalog) trackOverwrite(sl slot) {
 	meta := dl.files[sl.fileID].meta
 	meta.DeletedKeys++
-	meta.DeletedBytes += encodedKeyValueSize(sl.kvSize())
+	meta.DeletedBytes += encodedRecordSize(sl.kvSize())
+}
+
+func (dl *datalog) del(key []byte, sl slot) error {
+	dl.trackOverwrite(sl)
+	delRecord := encodeDeleteRecord(key)
+	_, _, err := dl.writeRecord(delRecord)
+	if err != nil {
+		return err
+	}
+	dl.curFile.meta.DeletedBytes += uint32(len(delRecord))
+	return nil
 }
 
 func (dl *datalog) writeRecord(data []byte) (uint16, uint32, error) {
@@ -167,17 +181,16 @@ func (dl *datalog) writeRecord(data []byte) (uint16, uint32, error) {
 			return 0, 0, err
 		}
 	}
-
 	off, err := dl.curFile.append(data)
 	if err != nil {
 		return 0, 0, err
 	}
-	dl.curFile.meta.TotalKeys++
+	dl.curFile.meta.TotalRecords++
 	return dl.curFile.id, uint32(off), nil
 }
 
 func (dl *datalog) writeKeyValue(key []byte, value []byte) (uint16, uint32, error) {
-	return dl.writeRecord(encodeKeyValue(key, value))
+	return dl.writeRecord(encodePutRecord(key, value))
 }
 
 func (dl *datalog) sync() error {
@@ -200,19 +213,35 @@ func (dl *datalog) close() error {
 	return nil
 }
 
-func (dl *datalog) pickForCompaction() *datafile {
+func (dl *datalog) filesByModification() ([]*datafile, error) {
+	// Sort data file in ascending order by last modified time.
+	var dfs []struct {
+		f       *datafile
+		modTime time.Time
+	}
+
 	for _, f := range dl.files {
 		if f == nil {
 			continue
 		}
-		if uint32(f.size) < dl.opts.compactionMinDatafileSize {
-			continue
+		stat, err := f.MmapFile.Stat()
+		if err != nil {
+			return nil, err
 		}
-		fragmentation := float32(f.meta.DeletedBytes) / float32(f.size)
-		if fragmentation < dl.opts.compactionMinFragmentation {
-			continue
-		}
-		return f
+		dfs = append(dfs, struct {
+			f       *datafile
+			modTime time.Time
+		}{f: f, modTime: stat.ModTime()})
 	}
-	return nil
+
+	sort.Slice(dfs, func(i, j int) bool {
+		return dfs[i].modTime.Before(dfs[j].modTime)
+	})
+
+	files := make([]*datafile, 0, len(dfs))
+	for _, df := range dfs {
+		files = append(files, df.f)
+	}
+
+	return files, nil
 }

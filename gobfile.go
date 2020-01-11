@@ -16,7 +16,6 @@ func readGobFile(fsys fs.FileSystem, name string, v interface{}) error {
 	return dec.Decode(v)
 }
 
-// TODO: write to tmp first
 func writeGobFile(fsys fs.FileSystem, name string, v interface{}) error {
 	f, err := openFile(fsys, name, true)
 	if err != nil {

@@ -4,10 +4,6 @@ import (
 	"sync/atomic"
 )
 
-const (
-	compactionMaxFiles = 2
-)
-
 func (db *DB) moveRecord(rec datafileRecord) (bool, error) {
 	hash := db.hash(rec.key)
 	reclaimed := true
@@ -33,15 +29,15 @@ func (db *DB) moveRecord(rec datafileRecord) (bool, error) {
 	return reclaimed, err
 }
 
+// CompactionResult holds the compaction result.
 type CompactionResult struct {
-	CompactedFiles int
-	ReclaimedItems int
-	ReclaimedBytes int
+	CompactedFiles   int
+	ReclaimedRecords int
+	ReclaimedBytes   int
 }
 
 func (db *DB) compact(f *datafile) (CompactionResult, error) {
 	cr := CompactionResult{}
-	dl := db.datalog
 
 	db.mu.Lock()
 	f.meta.Full = true // Prevent writes to the compacted file.
@@ -60,9 +56,14 @@ func (db *DB) compact(f *datafile) (CompactionResult, error) {
 			if err != nil {
 				return err
 			}
+			if rec.rtype == recordTypeDelete {
+				cr.ReclaimedRecords++
+				cr.ReclaimedBytes += len(rec.data)
+				return nil
+			}
 			reclaimed, err := db.moveRecord(rec)
 			if reclaimed {
-				cr.ReclaimedItems++
+				cr.ReclaimedRecords++
 				cr.ReclaimedBytes += len(rec.data)
 			}
 			return err
@@ -76,7 +77,7 @@ func (db *DB) compact(f *datafile) (CompactionResult, error) {
 	}
 
 	db.mu.Lock()
-	err = dl.removeFile(f)
+	err = db.datalog.removeFile(f)
 	db.mu.Unlock()
 	if err != nil {
 		return cr, err
@@ -85,32 +86,55 @@ func (db *DB) compact(f *datafile) (CompactionResult, error) {
 	return cr, nil
 }
 
+func (db *DB) pickForCompaction() ([]*datafile, error) {
+	files, err := db.datalog.filesByModification()
+	if err != nil {
+		return nil, err
+	}
+	for i := len(files) - 1; i >= 0; i-- {
+		f := files[i]
+		if uint32(f.size) < db.opts.compactionMinDatafileSize {
+			continue
+		}
+		fragmentation := float32(f.meta.DeletedBytes) / float32(f.size)
+		if fragmentation < db.opts.compactionMinFragmentation {
+			continue
+		}
+		// All files older than the file eligible for compaction have to be compacted.
+		// Delete records can be discarded only when older files contain no put records for the corresponding keys.
+		return files[:i+1], nil
+	}
+	return nil, nil
+}
+
 // Compact compacts the DB. Deleted and overwritten items are discarded.
 func (db *DB) Compact() (CompactionResult, error) {
 	cr := CompactionResult{}
+
+	// Run only a single compaction at a time.
 	if !atomic.CompareAndSwapInt32(&db.compactionRunning, 0, 1) {
 		return cr, errBusy
 	}
 	defer func() {
 		atomic.StoreInt32(&db.compactionRunning, 0)
 	}()
-	for {
-		db.mu.RLock()
-		f := db.datalog.pickForCompaction()
-		db.mu.RUnlock()
-		if f == nil {
-			break
-		}
+
+	db.mu.RLock()
+	files, err := db.pickForCompaction()
+	db.mu.RUnlock()
+	if err != nil {
+		return cr, err
+	}
+
+	for _, f := range files {
 		fcr, err := db.compact(f)
 		if err != nil {
 			return cr, err
 		}
 		cr.CompactedFiles++
-		cr.ReclaimedItems += fcr.ReclaimedItems
+		cr.ReclaimedRecords += fcr.ReclaimedRecords
 		cr.ReclaimedBytes += fcr.ReclaimedBytes
-		if cr.CompactedFiles == compactionMaxFiles {
-			break
-		}
 	}
+
 	return cr, nil
 }

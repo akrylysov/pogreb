@@ -35,6 +35,7 @@ func openFile(fsyst fs.FileSystem, name string, truncate bool) (*file, error) {
 	}
 	f.size = stat.Size()
 	if f.size == 0 {
+		// It's a new file - write header.
 		if err := f.writeHeader(); err != nil {
 			return nil, err
 		}

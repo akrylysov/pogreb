@@ -18,15 +18,16 @@ const (
 	// MaxKeyLength is the maximum size of a key in bytes.
 	MaxKeyLength = math.MaxUint16
 
+	maxUint30 = 1<<30 - 1
+
 	// MaxValueLength is the maximum size of a value in bytes.
-	MaxValueLength = math.MaxUint32 - MaxKeyLength
+	MaxValueLength = maxUint30
 
 	// MaxKeys is the maximum numbers of keys in the DB.
 	MaxKeys = math.MaxUint32
 
-	formatVersion = 2 // file format version
-	metaExt       = ".meta"
-	dbMetaName    = "db" + metaExt
+	metaExt    = ".meta"
+	dbMetaName = "db" + metaExt
 )
 
 // DB represents the key-value storage.
@@ -247,7 +248,7 @@ func (db *DB) put(sl slot, key []byte) error {
 			return true, err
 		}
 		if bytes.Equal(key, slKey) {
-			db.datalog.del(cursl) // Overwriting existing key
+			db.datalog.trackOverwrite(cursl) // Overwriting existing key.
 			return true, nil
 		}
 		return false, nil
@@ -266,10 +267,12 @@ func (db *DB) Put(key []byte, value []byte) error {
 	db.metrics.Puts.Add(1)
 	db.mu.Lock()
 	defer db.mu.Unlock()
+
 	fileID, offset, err := db.datalog.writeKeyValue(key, value)
 	if err != nil {
 		return err
 	}
+
 	sl := slot{
 		hash:      h,
 		fileID:    fileID,
@@ -288,12 +291,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 	return nil
 }
 
-// Delete deletes the given key from the DB.
-func (db *DB) Delete(key []byte) error {
-	h := db.hash(key)
-	db.metrics.Dels.Add(1)
-	db.mu.Lock()
-	defer db.mu.Unlock()
+func (db *DB) del(h uint32, key []byte) error {
 	err := db.index.delete(h, func(sl slot) (b bool, e error) {
 		if uint16(len(key)) != sl.keySize {
 			return false, nil
@@ -303,12 +301,20 @@ func (db *DB) Delete(key []byte) error {
 			return true, err
 		}
 		if bytes.Equal(key, slKey) {
-			db.datalog.del(sl)
-			return true, nil
+			return true, db.datalog.del(key, sl)
 		}
 		return false, nil
 	})
-	if err != nil {
+	return err
+}
+
+// Delete deletes the given key from the DB.
+func (db *DB) Delete(key []byte) error {
+	h := db.hash(key)
+	db.metrics.Dels.Add(1)
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	if err := db.del(h, key); err != nil {
 		return err
 	}
 	if db.syncWrites {

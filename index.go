@@ -12,6 +12,7 @@ const (
 	loadFactor        = 0.7
 )
 
+// index is an on-disk linear hashing hash table.
 type index struct {
 	opts           *Options
 	main           *file
@@ -331,7 +332,6 @@ func (idx *index) close() error {
 	return nil
 }
 
-// Count returns the number of keys in the index.
 func (idx *index) count() uint32 {
 	return idx.numKeys
 }

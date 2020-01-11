@@ -7,35 +7,34 @@ import (
 )
 
 const (
-	slotsPerBucket        = 31
-	bucketSize     uint32 = 512
+	slotsPerBucket = 31
+	bucketSize     = 512
 )
 
+// slot corresponds to a single item in the hash table.
 type slot struct {
 	hash      uint32
-	fileID    uint16
+	fileID    uint16 // Datafile ID.
 	keySize   uint16
 	valueSize uint32
-	offset    uint32
+	offset    uint32 // Datafile offset.
 }
 
 func (sl slot) kvSize() uint32 {
 	return uint32(sl.keySize) + sl.valueSize
 }
 
+// bucket is an array of slots.
 type bucket struct {
 	slots [slotsPerBucket]slot
-	next  int64
+	next  int64 // Offset of overflow bucket.
 }
 
+// bucketHandle is a bucket, plus its offset and the file it's written to.
 type bucketHandle struct {
 	bucket
 	file   fs.MmapFile
 	offset int64
-}
-
-func align512(n uint32) uint32 {
-	return (n + 511) &^ 511
 }
 
 func (b bucket) MarshalBinary() ([]byte, error) {
@@ -93,6 +92,7 @@ func (b *bucketHandle) write() error {
 	return err
 }
 
+// slotWriter inserts and writes slots into a bucket.
 type slotWriter struct {
 	bucket      *bucketHandle
 	slotIdx     int
@@ -101,6 +101,7 @@ type slotWriter struct {
 
 func (sw *slotWriter) insert(sl slot, idx *index) error {
 	if sw.slotIdx == slotsPerBucket {
+		// Bucket is full, create a new overflow bucket.
 		nextBucket, err := idx.createOverflowBucket()
 		if err != nil {
 			return err
@@ -116,6 +117,7 @@ func (sw *slotWriter) insert(sl slot, idx *index) error {
 }
 
 func (sw *slotWriter) write() error {
+	// Write previous buckets first.
 	for i := len(sw.prevBuckets) - 1; i >= 0; i-- {
 		if err := sw.prevBuckets[i].write(); err != nil {
 			return err

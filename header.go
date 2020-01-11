@@ -5,18 +5,18 @@ import (
 	"encoding/binary"
 )
 
+const (
+	formatVersion = 2 // File format version.
+	headerSize    = 512
+)
+
 var (
-	signature  = [8]byte{'p', 'o', 'g', 'r', 'e', 'b', '\x0e', '\xfd'}
-	headerSize uint32
+	signature = [8]byte{'p', 'o', 'g', 'r', 'e', 'b', '\x0e', '\xfd'}
 )
 
 type header struct {
 	signature     [8]byte
 	formatVersion uint32
-}
-
-func init() {
-	headerSize = align512(uint32(binary.Size(header{})))
 }
 
 func newHeader() *header {

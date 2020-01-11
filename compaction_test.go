@@ -76,10 +76,10 @@ func TestCompaction(t *testing.T) {
 		assertEqual(t, 2, numFiles())
 		cr, err := db.Compact()
 		assertNil(t, err)
-		assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedItems: 42, ReclaimedBytes: 504}, cr)
+		assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedRecords: 42, ReclaimedBytes: 504}, cr)
 		assertEqual(t, 1, numFiles())
 		assertNil(t, db.datalog.files[0])
-		assertEqual(t, &datafileMeta{TotalKeys: 42}, db.datalog.files[1].meta)
+		assertEqual(t, &datafileMeta{TotalRecords: 42}, db.datalog.files[1].meta)
 		// Compacted file was removed.
 		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, datafileName(0))))
 		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, datafileName(0))+metaExt))
@@ -91,11 +91,12 @@ func TestCompaction(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		assertEqual(t, 1, numFiles())
-		assertEqual(t, &datafileMeta{TotalKeys: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.files[1].meta)
+		assertEqual(t, 2, numFiles())
+		assertEqual(t, &datafileMeta{TotalRecords: 42, DeletedKeys: 0, DeletedBytes: 462}, db.datalog.files[0].meta)
+		assertEqual(t, &datafileMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.files[1].meta)
 		cr, err := db.Compact()
 		assertNil(t, err)
-		assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedItems: 42, ReclaimedBytes: 504}, cr)
+		assertEqual(t, CompactionResult{CompactedFiles: 2, ReclaimedRecords: 84, ReclaimedBytes: 966}, cr)
 		assertEqual(t, 0, numFiles())
 		assertNil(t, db.datalog.files[0])
 		assertNil(t, db.datalog.files[1])
@@ -123,7 +124,7 @@ func TestCompaction(t *testing.T) {
 		}
 		cr, err := db.Compact()
 		assertNil(t, err)
-		assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedItems: 40, ReclaimedBytes: 480}, cr)
+		assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedRecords: 40, ReclaimedBytes: 480}, cr)
 		assertEqual(t, 7, numFiles())
 	})
 
@@ -135,7 +136,7 @@ func TestCompaction(t *testing.T) {
 		}
 		cr, err := db.Compact()
 		assertNil(t, err)
-		assertEqual(t, CompactionResult{CompactedFiles: 2, ReclaimedItems: 84, ReclaimedBytes: 1008}, cr)
+		assertEqual(t, CompactionResult{CompactedFiles: 2, ReclaimedRecords: 84, ReclaimedBytes: 1008}, cr)
 		assertEqual(t, 7, numFiles())
 	})
 

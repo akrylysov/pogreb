@@ -68,6 +68,10 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func align512(n uint32) uint32 {
+	return (n + 511) &^ 511
+}
+
 func TestBucketSize(t *testing.T) {
 	if bucketSize != align512(uint32(binary.Size(bucket{}))) {
 		t.Fatal("wrong bucketSize value", bucketSize)
@@ -180,8 +184,8 @@ func TestSimple(t *testing.T) {
 	assertNil(t, err)
 	verifyKeysAndClose(0)
 
-	assertEqual(t, datafileMeta{TotalKeys: 42}, *db.datalog.files[0].meta)
-	assertEqual(t, datafileMeta{TotalKeys: 42}, *db.datalog.files[1].meta)
+	assertEqual(t, datafileMeta{TotalRecords: 43, DeletedBytes: 11}, *db.datalog.files[0].meta)
+	assertEqual(t, datafileMeta{TotalRecords: 42}, *db.datalog.files[1].meta)
 
 	// Update all items
 	db, err = Open("test.db", nil)
