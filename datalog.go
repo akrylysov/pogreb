@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -181,7 +180,6 @@ func (dl *datalog) del(key []byte, sl slot) error {
 func (dl *datalog) writeRecord(data []byte) (uint16, uint32, error) {
 	if dl.curFile.meta.Full || uint32(dl.curFile.size)+uint32(len(data)) > dl.opts.maxDatafileSize {
 		dl.curFile.meta.Full = true
-		dl.curFile.lastModTime = time.Now().UnixNano()
 		if err := dl.swapDatafile(); err != nil {
 			return 0, 0, err
 		}
