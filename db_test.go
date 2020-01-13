@@ -153,9 +153,7 @@ func TestSimple(t *testing.T) {
 
 	verifyKeysAndClose := func(valueOffset uint8) {
 		t.Helper()
-		if db.Count() != 255 {
-			t.Fatal()
-		}
+		assertEqual(t, uint32(255), db.Count())
 		for i = 0; i < n; i++ {
 			if has, err := db.Has([]byte{i}); !has || err != nil {
 				t.Fatal(has, err)

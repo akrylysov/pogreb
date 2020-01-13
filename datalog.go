@@ -72,7 +72,11 @@ func (dl *datalog) openDatafile(path string, id uint16) (*datafile, error) {
 			// TODO: rebuild meta?
 		}
 	}
-	df := &datafile{file: f, id: id, meta: meta}
+	stat, err := f.MmapFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+	df := &datafile{file: f, id: id, meta: meta, lastModTime: stat.ModTime().UnixNano()}
 	dl.files[id] = df
 	return df, nil
 }
@@ -177,6 +181,7 @@ func (dl *datalog) del(key []byte, sl slot) error {
 func (dl *datalog) writeRecord(data []byte) (uint16, uint32, error) {
 	if dl.curFile.meta.Full || uint32(dl.curFile.size)+uint32(len(data)) > dl.opts.maxDatafileSize {
 		dl.curFile.meta.Full = true
+		dl.curFile.lastModTime = time.Now().UnixNano()
 		if err := dl.swapDatafile(); err != nil {
 			return 0, 0, err
 		}
@@ -215,33 +220,18 @@ func (dl *datalog) close() error {
 
 func (dl *datalog) filesByModification() ([]*datafile, error) {
 	// Sort data file in ascending order by last modified time.
-	var dfs []struct {
-		f       *datafile
-		modTime time.Time
-	}
+	var files []*datafile
 
 	for _, f := range dl.files {
 		if f == nil {
 			continue
 		}
-		stat, err := f.MmapFile.Stat()
-		if err != nil {
-			return nil, err
-		}
-		dfs = append(dfs, struct {
-			f       *datafile
-			modTime time.Time
-		}{f: f, modTime: stat.ModTime()})
+		files = append(files, f)
 	}
 
-	sort.Slice(dfs, func(i, j int) bool {
-		return dfs[i].modTime.Before(dfs[j].modTime)
+	sort.SliceStable(files, func(i, j int) bool {
+		return files[i].lastModTime < files[j].lastModTime
 	})
-
-	files := make([]*datafile, 0, len(dfs))
-	for _, df := range dfs {
-		files = append(files, df.f)
-	}
 
 	return files, nil
 }

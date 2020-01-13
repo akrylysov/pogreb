@@ -180,7 +180,7 @@ func (db *DB) startBackgroundWorker() {
 				if cr, err := db.Compact(); err != nil {
 					logger.Printf("error compacting databse: %v", err)
 				} else if cr.CompactedFiles > 0 {
-					logger.Printf("compacted databse: %+v", cr)
+					logger.Printf("compacted database: %+v", cr)
 				}
 			}
 		}

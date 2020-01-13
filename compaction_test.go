@@ -39,6 +39,8 @@ func TestCompaction(t *testing.T) {
 	assertNil(t, err)
 
 	// A single data file can fit 42 items (12 bytes per item, 1 byte key, 1 byte value).
+	const maxItemsPerFile = 42
+
 	numFiles := func() int {
 		return countDatafiles(t, db)
 	}
@@ -55,7 +57,7 @@ func TestCompaction(t *testing.T) {
 	var n uint8 = 255
 
 	t.Run("no compaction", func(t *testing.T) {
-		for i = 0; i < 42; i++ {
+		for i = 0; i < maxItemsPerFile; i++ {
 			if err := db.Put([]byte{i}, []byte{i}); err != nil {
 				t.Fatal(err)
 			}
@@ -68,7 +70,7 @@ func TestCompaction(t *testing.T) {
 	})
 
 	t.Run("compact full current", func(t *testing.T) {
-		for i = 0; i < 42; i++ {
+		for i = 0; i < maxItemsPerFile; i++ {
 			if err := db.Put([]byte{i}, []byte{i}); err != nil {
 				t.Fatal(err)
 			}
