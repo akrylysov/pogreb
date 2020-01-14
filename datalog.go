@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -21,6 +22,7 @@ type datalog struct {
 	opts    *Options
 	curFile *datafile
 	files   [maxDatafiles]*datafile
+	modTime int64
 }
 
 func openDatalog(opts *Options) (*datalog, error) {
@@ -30,7 +32,8 @@ func openDatalog(opts *Options) (*datalog, error) {
 	}
 
 	dl := &datalog{
-		opts: opts,
+		opts:    opts,
+		modTime: time.Now().UnixNano(),
 	}
 
 	for _, name := range names {
@@ -64,18 +67,24 @@ func (dl *datalog) openDatafile(path string, id uint16) (*datafile, error) {
 	if err != nil {
 		return nil, err
 	}
+	var modTime int64
 	meta := &datafileMeta{}
 	if !f.empty() {
 		if err := readGobFile(dl.opts.FileSystem, path+metaExt, &meta); err != nil {
 			logger.Printf("error reading datafile meta %d: %v", id, err)
 			// TODO: rebuild meta?
 		}
+		stat, err := f.MmapFile.Stat()
+		if err != nil {
+			return nil, err
+		}
+		modTime = stat.ModTime().UnixNano()
+	} else {
+		dl.modTime++
+		modTime = dl.modTime
 	}
-	stat, err := f.MmapFile.Stat()
-	if err != nil {
-		return nil, err
-	}
-	df := &datafile{file: f, id: id, meta: meta, lastModTime: stat.ModTime().UnixNano()}
+
+	df := &datafile{file: f, id: id, meta: meta, modTime: modTime}
 	dl.files[id] = df
 	return df, nil
 }
@@ -228,7 +237,7 @@ func (dl *datalog) filesByModification() ([]*datafile, error) {
 	}
 
 	sort.SliceStable(files, func(i, j int) bool {
-		return files[i].lastModTime < files[j].lastModTime
+		return files[i].modTime < files[j].modTime
 	})
 
 	return files, nil

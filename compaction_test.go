@@ -63,19 +63,23 @@ func TestCompaction(t *testing.T) {
 			}
 		}
 		assertEqual(t, 1, numFiles())
+		assertEqual(t, &datafileMeta{TotalRecords: 42}, db.datalog.files[0].meta)
 		cr, err := db.Compact()
 		assertNil(t, err)
 		assertEqual(t, CompactionResult{}, cr)
 		assertEqual(t, 1, numFiles())
+		assertEqual(t, &datafileMeta{TotalRecords: 42}, db.datalog.files[0].meta)
 	})
 
-	t.Run("compact full current", func(t *testing.T) {
+	t.Run("compact full", func(t *testing.T) {
 		for i = 0; i < maxItemsPerFile; i++ {
 			if err := db.Put([]byte{i}, []byte{i}); err != nil {
 				t.Fatal(err)
 			}
 		}
 		assertEqual(t, 2, numFiles())
+		assertEqual(t, &datafileMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.files[0].meta)
+		assertEqual(t, &datafileMeta{TotalRecords: 42}, db.datalog.files[1].meta)
 		cr, err := db.Compact()
 		assertNil(t, err)
 		assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedRecords: 42, ReclaimedBytes: 504}, cr)

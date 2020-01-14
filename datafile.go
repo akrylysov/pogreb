@@ -18,9 +18,9 @@ const (
 // It consists of a sequence of binary-encoded variable length records.
 type datafile struct {
 	*file
-	id          uint16
-	meta        *datafileMeta
-	lastModTime int64
+	id      uint16
+	meta    *datafileMeta
+	modTime int64
 }
 
 type datafileMeta struct {
