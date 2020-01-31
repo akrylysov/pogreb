@@ -45,7 +45,7 @@ func main() {
 
 ### Writing to a database
 
-Use the `DB.Put()` function to insert a new key/value pair:
+Use the `DB.Put()` function to insert a new key-value pair:
 
 ```go
 err := db.Put([]byte("testKey"), []byte("testValue"))
@@ -95,4 +95,4 @@ on DigitalOcean 8 CPUs / 16 GB RAM / 160 GB SSD + Ubuntu 16.04.3 (higher is bett
 
 ## Internals
 
-[Pogreb - how it works](https://artem.krylysov.com/blog/2018/03/24/pogreb-key-value-store/).
+[Design document](/docs/design.md).

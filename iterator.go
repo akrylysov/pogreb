@@ -13,7 +13,7 @@ type item struct {
 	value []byte
 }
 
-// ItemIterator is an iterator over DB key/value pairs. It iterates the items in an unspecified order.
+// ItemIterator is an iterator over DB key-value pairs. It iterates the items in an unspecified order.
 type ItemIterator struct {
 	db            *DB
 	nextBucketIdx uint32
@@ -21,7 +21,7 @@ type ItemIterator struct {
 	mu            sync.Mutex
 }
 
-// Next returns the next key/value pair if available, otherwise it returns ErrIterationDone error.
+// Next returns the next key-value pair if available, otherwise it returns ErrIterationDone error.
 func (it *ItemIterator) Next() ([]byte, []byte, error) {
 	it.mu.Lock()
 	defer it.mu.Unlock()
