@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	indexExt          = ".index"
+	indexExt          = ".pix"
 	indexMainName     = "main" + indexExt
 	indexOverflowName = "overflow" + indexExt
 	indexMetaName     = "index" + metaExt

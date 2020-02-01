@@ -174,7 +174,7 @@ func TestSimple(t *testing.T) {
 
 	// Simulate crash.
 	assertNil(t, touchFile(filepath.Join("test.db", lockName)))
-	assertNil(t, os.Remove(filepath.Join("test.db", datafileName(0)+metaExt)))
+	assertNil(t, os.Remove(filepath.Join("test.db", datafileMetaName(0))))
 	assertNil(t, os.Remove(filepath.Join("test.db", indexMetaName)))
 
 	// Open and check again

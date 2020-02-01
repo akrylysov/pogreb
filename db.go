@@ -26,7 +26,7 @@ const (
 	// MaxKeys is the maximum numbers of keys in the DB.
 	MaxKeys = math.MaxUint32
 
-	metaExt    = ".meta"
+	metaExt    = ".pmt"
 	dbMetaName = "db" + metaExt
 )
 

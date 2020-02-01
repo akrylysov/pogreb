@@ -88,7 +88,7 @@ func TestCompaction(t *testing.T) {
 		assertEqual(t, &datafileMeta{TotalRecords: 42}, db.datalog.files[1].meta)
 		// Compacted file was removed.
 		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, datafileName(0))))
-		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, datafileName(0))+metaExt))
+		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, datafileMetaName(0))))
 	})
 
 	t.Run("delete all", func(t *testing.T) {

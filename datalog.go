@@ -14,7 +14,7 @@ import (
 
 const (
 	maxDatafiles = math.MaxInt16
-	dataPrefix   = "data_"
+	dataExt      = ".psg"
 )
 
 // datalog is a write-ahead log.
@@ -38,14 +38,10 @@ func openDatalog(opts *Options) (*datalog, error) {
 
 	for _, name := range names {
 		ext := filepath.Ext(name.Name())
-		if !strings.HasPrefix(name.Name(), dataPrefix) || ext != "" {
+		if ext != dataExt {
 			continue
 		}
-		parts := strings.SplitN(name.Name(), "_", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		id, err := strconv.ParseInt(parts[1], 10, 16)
+		id, err := strconv.ParseInt(strings.TrimSuffix(name.Name(), ext), 10, 16)
 		if err != nil {
 			return nil, err
 		}
@@ -70,7 +66,8 @@ func (dl *datalog) openDatafile(path string, id uint16) (*datafile, error) {
 	var modTime int64
 	meta := &datafileMeta{}
 	if !f.empty() {
-		if err := readGobFile(dl.opts.FileSystem, path+metaExt, &meta); err != nil {
+		metaPath := filepath.Join(dl.opts.path, datafileMetaName(id))
+		if err := readGobFile(dl.opts.FileSystem, metaPath, &meta); err != nil {
 			logger.Printf("error reading datafile meta %d: %v", id, err)
 			// TODO: rebuild meta?
 		}
@@ -99,7 +96,11 @@ func (dl *datalog) nextWritableFileID() (uint16, error) {
 }
 
 func datafileName(id uint16) string {
-	return fmt.Sprintf("%s%05d", dataPrefix, id)
+	return fmt.Sprintf("%05d%s", id, dataExt)
+}
+
+func datafileMetaName(id uint16) string {
+	return fmt.Sprintf("%05d%s%s", id, dataExt, metaExt)
 }
 
 func (dl *datalog) swapDatafile() error {
@@ -135,7 +136,7 @@ func (dl *datalog) removeFile(f *datafile) error {
 	}
 
 	// Remove file meta.
-	metaPath := filePath + metaExt
+	metaPath := filepath.Join(dl.opts.path, datafileMetaName(f.id))
 	if err := os.Remove(metaPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -217,7 +218,7 @@ func (dl *datalog) close() error {
 		if err := f.Close(); err != nil {
 			return err
 		}
-		metaPath := filepath.Join(dl.opts.path, datafileName(uint16(id))+metaExt)
+		metaPath := filepath.Join(dl.opts.path, datafileMetaName(uint16(id)))
 		if err := writeGobFile(dl.opts.FileSystem, metaPath, f.meta); err != nil {
 			return err
 		}
