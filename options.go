@@ -23,8 +23,8 @@ type Options struct {
 	FileSystem fs.FileSystem
 
 	path                       string
-	maxDatafileSize            uint32
-	compactionMinDatafileSize  uint32
+	maxSegmentSize             uint32
+	compactionMinSegmentSize   uint32
 	compactionMinFragmentation float32
 }
 
@@ -36,11 +36,11 @@ func (src *Options) copyWithDefaults(path string) *Options {
 	if opts.FileSystem == nil {
 		opts.FileSystem = fs.OS
 	}
-	if opts.maxDatafileSize == 0 {
-		opts.maxDatafileSize = math.MaxUint32
+	if opts.maxSegmentSize == 0 {
+		opts.maxSegmentSize = math.MaxUint32
 	}
-	if opts.compactionMinDatafileSize == 0 {
-		opts.compactionMinDatafileSize = 32 << 20
+	if opts.compactionMinSegmentSize == 0 {
+		opts.compactionMinSegmentSize = 32 << 20
 	}
 	if opts.compactionMinFragmentation == 0 {
 		opts.compactionMinFragmentation = 0.5

@@ -3,6 +3,7 @@ package pogreb
 import (
 	"bufio"
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"io"
 )
@@ -12,35 +13,45 @@ type recordType int
 const (
 	recordTypePut recordType = iota
 	recordTypeDelete
+
+	segmentExt = ".psg"
 )
 
-// datafile is a write-ahead log segment.
+// segment is a write-ahead log segment.
 // It consists of a sequence of binary-encoded variable length records.
-type datafile struct {
+type segment struct {
 	*file
 	id      uint16
-	meta    *datafileMeta
+	meta    *segmentMeta
 	modTime int64
 }
 
-type datafileMeta struct {
+func segmentName(id uint16) string {
+	return fmt.Sprintf("%05d%s", id, segmentExt)
+}
+
+type segmentMeta struct {
 	Full         bool
 	TotalRecords uint32
 	DeletedKeys  uint32
 	DeletedBytes uint32
 }
 
-// Binary representation of a datafile record:
+func segmentMetaName(id uint16) string {
+	return fmt.Sprintf("%05d%s%s", id, segmentExt, metaExt)
+}
+
+// Binary representation of a segment record:
 // +---------------+------------------+------------------+-...-+--...--+----------+
 // | Key Size (2B) | Record Type (1b) | Value Size (31b) | Key | Value | CRC (4B) |
 // +---------------+------------------+------------------+-...-+--...--+----------+
-type datafileRecord struct {
-	rtype  recordType
-	fileID uint16
-	offset uint32
-	data   []byte
-	key    []byte
-	value  []byte
+type record struct {
+	rtype     recordType
+	segmentID uint16
+	offset    uint32
+	data      []byte
+	key       []byte
+	value     []byte
 }
 
 func encodedRecordSize(kvSize uint32) uint32 {
@@ -74,19 +85,19 @@ func encodeDeleteRecord(key []byte) []byte {
 	return encodeRecord(key, nil, recordTypeDelete)
 }
 
-// datafileIterator iterates over datafile records.
-type datafileIterator struct {
-	f      *datafile
+// segmentIterator iterates over segment records.
+type segmentIterator struct {
+	f      *segment
 	offset uint32
 	r      *bufio.Reader
 	buf    []byte // kv size and crc32 reusable buffer.
 }
 
-func newDatafileIterator(f *datafile) (*datafileIterator, error) {
+func newSegmentIterator(f *segment) (*segmentIterator, error) {
 	if _, err := f.Seek(int64(headerSize), io.SeekStart); err != nil {
 		return nil, err
 	}
-	return &datafileIterator{
+	return &segmentIterator{
 		f:      f,
 		offset: headerSize,
 		r:      bufio.NewReader(f),
@@ -94,14 +105,14 @@ func newDatafileIterator(f *datafile) (*datafileIterator, error) {
 	}, nil
 }
 
-func (it *datafileIterator) next() (datafileRecord, error) {
+func (it *segmentIterator) next() (record, error) {
 	// Read key and value size.
 	kvSizeBuf := it.buf
 	if _, err := io.ReadFull(it.r, kvSizeBuf); err != nil {
 		if err == io.EOF {
-			return datafileRecord{}, ErrIterationDone
+			return record{}, ErrIterationDone
 		}
-		return datafileRecord{}, err
+		return record{}, err
 	}
 
 	// Decode key size.
@@ -120,24 +131,24 @@ func (it *datafileIterator) next() (datafileRecord, error) {
 	data := make([]byte, recordSize)
 	copy(data, kvSizeBuf)
 	if _, err := io.ReadFull(it.r, data[6:]); err != nil {
-		return datafileRecord{}, err
+		return record{}, err
 	}
 
 	// Verify checksum.
 	checksum := binary.LittleEndian.Uint32(data[len(data)-4:])
 	if checksum != crc32.ChecksumIEEE(data[:len(data)-4]) {
-		return datafileRecord{}, errCorrupted
+		return record{}, errCorrupted
 	}
 
 	offset := it.offset
 	it.offset += recordSize
-	rec := datafileRecord{
-		rtype:  rt,
-		fileID: it.f.id,
-		offset: offset,
-		data:   data,
-		key:    data[6 : 6+keySize],
-		value:  data[6+keySize : 6+keySize+valueSize],
+	rec := record{
+		rtype:     rt,
+		segmentID: it.f.id,
+		offset:    offset,
+		data:      data,
+		key:       data[6 : 6+keySize],
+		value:     data[6+keySize : 6+keySize+valueSize],
 	}
 	return rec, nil
 }

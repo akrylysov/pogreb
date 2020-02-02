@@ -13,16 +13,15 @@ import (
 )
 
 const (
-	maxDatafiles = math.MaxInt16
-	dataExt      = ".psg"
+	maxSegments = math.MaxInt16
 )
 
 // datalog is a write-ahead log.
 type datalog struct {
-	opts    *Options
-	curFile *datafile
-	files   [maxDatafiles]*datafile
-	modTime int64
+	opts     *Options
+	curSeg   *segment
+	segments [maxSegments]*segment
+	modTime  int64
 }
 
 func openDatalog(opts *Options) (*datalog, error) {
@@ -38,37 +37,37 @@ func openDatalog(opts *Options) (*datalog, error) {
 
 	for _, name := range names {
 		ext := filepath.Ext(name.Name())
-		if ext != dataExt {
+		if ext != segmentExt {
 			continue
 		}
 		id, err := strconv.ParseInt(strings.TrimSuffix(name.Name(), ext), 10, 16)
 		if err != nil {
 			return nil, err
 		}
-		_, err = dl.openDatafile(filepath.Join(opts.path, name.Name()), uint16(id))
+		_, err = dl.openSegment(filepath.Join(opts.path, name.Name()), uint16(id))
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if err := dl.swapDatafile(); err != nil {
+	if err := dl.swapSegment(); err != nil {
 		return nil, err
 	}
 
 	return dl, nil
 }
 
-func (dl *datalog) openDatafile(path string, id uint16) (*datafile, error) {
+func (dl *datalog) openSegment(path string, id uint16) (*segment, error) {
 	f, err := openFile(dl.opts.FileSystem, path, false)
 	if err != nil {
 		return nil, err
 	}
 	var modTime int64
-	meta := &datafileMeta{}
+	meta := &segmentMeta{}
 	if !f.empty() {
-		metaPath := filepath.Join(dl.opts.path, datafileMetaName(id))
+		metaPath := filepath.Join(dl.opts.path, segmentMetaName(id))
 		if err := readGobFile(dl.opts.FileSystem, metaPath, &meta); err != nil {
-			logger.Printf("error reading datafile meta %d: %v", id, err)
+			logger.Printf("error reading segment meta %d: %v", id, err)
 			// TODO: rebuild meta?
 		}
 		stat, err := f.MmapFile.Stat()
@@ -81,62 +80,54 @@ func (dl *datalog) openDatafile(path string, id uint16) (*datafile, error) {
 		modTime = dl.modTime
 	}
 
-	df := &datafile{file: f, id: id, meta: meta, modTime: modTime}
-	dl.files[id] = df
+	df := &segment{file: f, id: id, meta: meta, modTime: modTime}
+	dl.segments[id] = df
 	return df, nil
 }
 
-func (dl *datalog) nextWritableFileID() (uint16, error) {
-	for i, file := range dl.files {
+func (dl *datalog) nextWritableSegmentID() (uint16, error) {
+	for i, file := range dl.segments {
 		if file == nil || !file.meta.Full {
 			return uint16(i), nil
 		}
 	}
-	return 0, fmt.Errorf("number of data files exceeds %d", maxDatafiles)
+	return 0, fmt.Errorf("number of segments exceeds %d", maxSegments)
 }
 
-func datafileName(id uint16) string {
-	return fmt.Sprintf("%05d%s", id, dataExt)
-}
-
-func datafileMetaName(id uint16) string {
-	return fmt.Sprintf("%05d%s%s", id, dataExt, metaExt)
-}
-
-func (dl *datalog) swapDatafile() error {
-	id, err := dl.nextWritableFileID()
+func (dl *datalog) swapSegment() error {
+	id, err := dl.nextWritableSegmentID()
 	if err != nil {
 		return err
 	}
-	var f *datafile
-	if dl.files[id] != nil {
-		f = dl.files[id]
+	var f *segment
+	if dl.segments[id] != nil {
+		f = dl.segments[id]
 	} else {
-		name := datafileName(id)
-		f, err = dl.openDatafile(filepath.Join(dl.opts.path, name), id)
+		name := segmentName(id)
+		f, err = dl.openSegment(filepath.Join(dl.opts.path, name), id)
 		if err != nil {
 			return err
 		}
 	}
-	dl.curFile = f
+	dl.curSeg = f
 	return nil
 }
 
-func (dl *datalog) removeFile(f *datafile) error {
-	dl.files[f.id] = nil
+func (dl *datalog) removeSegment(f *segment) error {
+	dl.segments[f.id] = nil
 
 	if err := f.Close(); err != nil {
 		return err
 	}
 
-	// Remove file.
-	filePath := filepath.Join(dl.opts.path, datafileName(f.id))
+	// Remove segment.
+	filePath := filepath.Join(dl.opts.path, segmentName(f.id))
 	if err := os.Remove(filePath); err != nil {
 		return err
 	}
 
-	// Remove file meta.
-	metaPath := filepath.Join(dl.opts.path, datafileMetaName(f.id))
+	// Remove segment meta.
+	metaPath := filepath.Join(dl.opts.path, segmentMetaName(f.id))
 	if err := os.Remove(metaPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -145,7 +136,7 @@ func (dl *datalog) removeFile(f *datafile) error {
 
 func (dl *datalog) readKeyValue(sl slot) ([]byte, []byte, error) {
 	off := int64(sl.offset) + 6 // Skip key size and value size.
-	f := dl.files[sl.fileID]
+	f := dl.segments[sl.segmentID]
 	keyValue, err := f.Slice(off, off+int64(sl.kvSize()))
 	if err != nil {
 		return nil, nil, err
@@ -160,7 +151,7 @@ func (dl *datalog) readKeyValue(sl slot) ([]byte, []byte, error) {
 
 func (dl *datalog) readKey(sl slot) ([]byte, error) {
 	off := int64(sl.offset) + 6
-	f := dl.files[sl.fileID]
+	f := dl.segments[sl.segmentID]
 	return f.Slice(off, off+int64(sl.keySize))
 	/*key := make([]byte, sl.keySize)
 	_, err := f.ReadAt(key, off)
@@ -171,7 +162,7 @@ func (dl *datalog) readKey(sl slot) ([]byte, error) {
 }
 
 func (dl *datalog) trackOverwrite(sl slot) {
-	meta := dl.files[sl.fileID].meta
+	meta := dl.segments[sl.segmentID].meta
 	meta.DeletedKeys++
 	meta.DeletedBytes += encodedRecordSize(sl.kvSize())
 }
@@ -183,23 +174,23 @@ func (dl *datalog) del(key []byte, sl slot) error {
 	if err != nil {
 		return err
 	}
-	dl.curFile.meta.DeletedBytes += uint32(len(delRecord))
+	dl.curSeg.meta.DeletedBytes += uint32(len(delRecord))
 	return nil
 }
 
 func (dl *datalog) writeRecord(data []byte) (uint16, uint32, error) {
-	if dl.curFile.meta.Full || uint32(dl.curFile.size)+uint32(len(data)) > dl.opts.maxDatafileSize {
-		dl.curFile.meta.Full = true
-		if err := dl.swapDatafile(); err != nil {
+	if dl.curSeg.meta.Full || uint32(dl.curSeg.size)+uint32(len(data)) > dl.opts.maxSegmentSize {
+		dl.curSeg.meta.Full = true
+		if err := dl.swapSegment(); err != nil {
 			return 0, 0, err
 		}
 	}
-	off, err := dl.curFile.append(data)
+	off, err := dl.curSeg.append(data)
 	if err != nil {
 		return 0, 0, err
 	}
-	dl.curFile.meta.TotalRecords++
-	return dl.curFile.id, uint32(off), nil
+	dl.curSeg.meta.TotalRecords++
+	return dl.curSeg.id, uint32(off), nil
 }
 
 func (dl *datalog) writeKeyValue(key []byte, value []byte) (uint16, uint32, error) {
@@ -207,18 +198,18 @@ func (dl *datalog) writeKeyValue(key []byte, value []byte) (uint16, uint32, erro
 }
 
 func (dl *datalog) sync() error {
-	return dl.curFile.Sync()
+	return dl.curSeg.Sync()
 }
 
 func (dl *datalog) close() error {
-	for id, f := range dl.files {
+	for id, f := range dl.segments {
 		if f == nil {
 			continue
 		}
 		if err := f.Close(); err != nil {
 			return err
 		}
-		metaPath := filepath.Join(dl.opts.path, datafileMetaName(uint16(id)))
+		metaPath := filepath.Join(dl.opts.path, segmentMetaName(uint16(id)))
 		if err := writeGobFile(dl.opts.FileSystem, metaPath, f.meta); err != nil {
 			return err
 		}
@@ -226,20 +217,20 @@ func (dl *datalog) close() error {
 	return nil
 }
 
-func (dl *datalog) filesByModification() ([]*datafile, error) {
-	// Sort data file in ascending order by last modified time.
-	var files []*datafile
+func (dl *datalog) segmentsByModification() ([]*segment, error) {
+	// Sort segments in ascending order by last modified time.
+	var segments []*segment
 
-	for _, f := range dl.files {
+	for _, f := range dl.segments {
 		if f == nil {
 			continue
 		}
-		files = append(files, f)
+		segments = append(segments, f)
 	}
 
-	sort.SliceStable(files, func(i, j int) bool {
-		return files[i].modTime < files[j].modTime
+	sort.SliceStable(segments, func(i, j int) bool {
+		return segments[i].modTime < segments[j].modTime
 	})
 
-	return files, nil
+	return segments, nil
 }

@@ -7,7 +7,7 @@ import (
 )
 
 func TestRecovery(t *testing.T) {
-	dfPath := filepath.Join("test.db", datafileName(0))
+	dfPath := filepath.Join("test.db", segmentName(0))
 	testCases := []struct {
 		name string
 		fn   func() error
@@ -122,8 +122,8 @@ func TestRecoveryDelete(t *testing.T) {
 
 func TestRecoveryCompaction(t *testing.T) {
 	opts := &Options{
-		maxDatafileSize:            1024,
-		compactionMinDatafileSize:  512,
+		maxSegmentSize:             1024,
+		compactionMinSegmentSize:   512,
 		compactionMinFragmentation: 0.2,
 	}
 
@@ -140,14 +140,14 @@ func TestRecoveryCompaction(t *testing.T) {
 	assertNil(t, db.Put([]byte{0}, []byte{0}))
 	assertNil(t, db.Put([]byte{0}, []byte{0}))
 
-	assertEqual(t, &datafileMeta{Full: true, TotalRecords: 42, DeletedKeys: 41, DeletedBytes: 492}, db.datalog.files[0].meta)
-	assertEqual(t, &datafileMeta{TotalRecords: 2, DeletedKeys: 1, DeletedBytes: 12}, db.datalog.files[1].meta)
+	assertEqual(t, &segmentMeta{Full: true, TotalRecords: 42, DeletedKeys: 41, DeletedBytes: 492}, db.datalog.segments[0].meta)
+	assertEqual(t, &segmentMeta{TotalRecords: 2, DeletedKeys: 1, DeletedBytes: 12}, db.datalog.segments[1].meta)
 
 	cm, err := db.Compact()
 	assertNil(t, err)
-	assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedRecords: 41, ReclaimedBytes: 492}, cm)
-	assertNil(t, db.datalog.files[0]) // Items were moved from file 0 to file 1.
-	assertEqual(t, &datafileMeta{TotalRecords: 3, DeletedKeys: 1, DeletedBytes: 12}, db.datalog.files[1].meta)
+	assertEqual(t, CompactionResult{CompactedSegments: 1, ReclaimedRecords: 41, ReclaimedBytes: 492}, cm)
+	assertNil(t, db.datalog.segments[0]) // Items were moved from file 0 to file 1.
+	assertEqual(t, &segmentMeta{TotalRecords: 3, DeletedKeys: 1, DeletedBytes: 12}, db.datalog.segments[1].meta)
 
 	// Fill file 1.
 	for i := 0; i < 40; i++ {
@@ -161,9 +161,9 @@ func TestRecoveryCompaction(t *testing.T) {
 	// Write to file 2.
 	assertNil(t, db.Put([]byte{0}, []byte{0}))
 
-	assertEqual(t, &datafileMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.files[0].meta)
-	assertEqual(t, &datafileMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.files[1].meta)
-	assertEqual(t, &datafileMeta{TotalRecords: 2}, db.datalog.files[2].meta)
+	assertEqual(t, &segmentMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.segments[0].meta)
+	assertEqual(t, &segmentMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.segments[1].meta)
+	assertEqual(t, &segmentMeta{TotalRecords: 2}, db.datalog.segments[2].meta)
 
 	v, err := db.Get([]byte{1})
 	assertNil(t, err)
@@ -192,8 +192,8 @@ func TestRecoveryIterator(t *testing.T) {
 	db, err := createTestDB(nil)
 	assertNil(t, err)
 
-	listRecords := func() []datafileRecord {
-		var records []datafileRecord
+	listRecords := func() []record {
+		var records []record
 		it, err := newRecoveryIterator(db.datalog)
 		assertNil(t, err)
 		for {
@@ -215,7 +215,7 @@ func TestRecoveryIterator(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertEqual(t,
-		[]datafileRecord{
+		[]record{
 			{recordTypePut, 0, 512, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}, []byte{1}, []byte{1}},
 		},
 		listRecords(),
@@ -225,7 +225,7 @@ func TestRecoveryIterator(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertEqual(t,
-		[]datafileRecord{
+		[]record{
 			{recordTypePut, 0, 512, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}, []byte{1}, []byte{1}},
 			{recordTypePut, 0, 524, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}, []byte{1}, []byte{1}},
 		},
@@ -236,7 +236,7 @@ func TestRecoveryIterator(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertEqual(t,
-		[]datafileRecord{
+		[]record{
 			{recordTypePut, 0, 512, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}, []byte{1}, []byte{1}},
 			{recordTypePut, 0, 524, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12}, []byte{1}, []byte{1}},
 			{recordTypePut, 0, 536, []byte{1, 0, 1, 0, 0, 0, 2, 2, 252, 15, 236, 190}, []byte{2}, []byte{2}},

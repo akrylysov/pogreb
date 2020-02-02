@@ -12,12 +12,12 @@ func fileExists(name string) bool {
 	return !os.IsNotExist(err)
 }
 
-func countDatafiles(t *testing.T, db *DB) int {
+func countSegments(t *testing.T, db *DB) int {
 	t.Helper()
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 	var c int
-	for _, f := range db.datalog.files {
+	for _, f := range db.datalog.segments {
 		if f != nil {
 			c++
 			if f.meta == nil {
@@ -30,27 +30,27 @@ func countDatafiles(t *testing.T, db *DB) int {
 
 func TestCompaction(t *testing.T) {
 	opts := &Options{
-		maxDatafileSize:            1024,
-		compactionMinDatafileSize:  512,
+		maxSegmentSize:             1024,
+		compactionMinSegmentSize:   512,
 		compactionMinFragmentation: 0.2,
 	}
 
 	db, err := createTestDB(opts)
 	assertNil(t, err)
 
-	// A single data file can fit 42 items (12 bytes per item, 1 byte key, 1 byte value).
+	// A single segment file can fit 42 items (12 bytes per item, 1 byte key, 1 byte value).
 	const maxItemsPerFile = 42
 
-	numFiles := func() int {
-		return countDatafiles(t, db)
+	numSegments := func() int {
+		return countSegments(t, db)
 	}
 
 	t.Run("empty", func(t *testing.T) {
-		assertEqual(t, 1, numFiles())
+		assertEqual(t, 1, numSegments())
 		cr, err := db.Compact()
 		assertNil(t, err)
 		assertEqual(t, CompactionResult{}, cr)
-		assertEqual(t, 1, numFiles())
+		assertEqual(t, 1, numSegments())
 	})
 
 	var i byte
@@ -62,13 +62,13 @@ func TestCompaction(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		assertEqual(t, 1, numFiles())
-		assertEqual(t, &datafileMeta{TotalRecords: 42}, db.datalog.files[0].meta)
+		assertEqual(t, 1, numSegments())
+		assertEqual(t, &segmentMeta{TotalRecords: 42}, db.datalog.segments[0].meta)
 		cr, err := db.Compact()
 		assertNil(t, err)
 		assertEqual(t, CompactionResult{}, cr)
-		assertEqual(t, 1, numFiles())
-		assertEqual(t, &datafileMeta{TotalRecords: 42}, db.datalog.files[0].meta)
+		assertEqual(t, 1, numSegments())
+		assertEqual(t, &segmentMeta{TotalRecords: 42}, db.datalog.segments[0].meta)
 	})
 
 	t.Run("compact full", func(t *testing.T) {
@@ -77,18 +77,18 @@ func TestCompaction(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		assertEqual(t, 2, numFiles())
-		assertEqual(t, &datafileMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.files[0].meta)
-		assertEqual(t, &datafileMeta{TotalRecords: 42}, db.datalog.files[1].meta)
+		assertEqual(t, 2, numSegments())
+		assertEqual(t, &segmentMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.segments[0].meta)
+		assertEqual(t, &segmentMeta{TotalRecords: 42}, db.datalog.segments[1].meta)
 		cr, err := db.Compact()
 		assertNil(t, err)
-		assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedRecords: 42, ReclaimedBytes: 504}, cr)
-		assertEqual(t, 1, numFiles())
-		assertNil(t, db.datalog.files[0])
-		assertEqual(t, &datafileMeta{TotalRecords: 42}, db.datalog.files[1].meta)
+		assertEqual(t, CompactionResult{CompactedSegments: 1, ReclaimedRecords: 42, ReclaimedBytes: 504}, cr)
+		assertEqual(t, 1, numSegments())
+		assertNil(t, db.datalog.segments[0])
+		assertEqual(t, &segmentMeta{TotalRecords: 42}, db.datalog.segments[1].meta)
 		// Compacted file was removed.
-		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, datafileName(0))))
-		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, datafileMetaName(0))))
+		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, segmentName(0))))
+		assertEqual(t, false, fileExists(filepath.Join(db.opts.path, segmentMetaName(0))))
 	})
 
 	t.Run("delete all", func(t *testing.T) {
@@ -97,15 +97,15 @@ func TestCompaction(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		assertEqual(t, 2, numFiles())
-		assertEqual(t, &datafileMeta{TotalRecords: 42, DeletedKeys: 0, DeletedBytes: 462}, db.datalog.files[0].meta)
-		assertEqual(t, &datafileMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.files[1].meta)
+		assertEqual(t, 2, numSegments())
+		assertEqual(t, &segmentMeta{TotalRecords: 42, DeletedKeys: 0, DeletedBytes: 462}, db.datalog.segments[0].meta)
+		assertEqual(t, &segmentMeta{Full: true, TotalRecords: 42, DeletedKeys: 42, DeletedBytes: 504}, db.datalog.segments[1].meta)
 		cr, err := db.Compact()
 		assertNil(t, err)
-		assertEqual(t, CompactionResult{CompactedFiles: 2, ReclaimedRecords: 84, ReclaimedBytes: 966}, cr)
-		assertEqual(t, 0, numFiles())
-		assertNil(t, db.datalog.files[0])
-		assertNil(t, db.datalog.files[1])
+		assertEqual(t, CompactionResult{CompactedSegments: 2, ReclaimedRecords: 84, ReclaimedBytes: 966}, cr)
+		assertEqual(t, 0, numSegments())
+		assertNil(t, db.datalog.segments[0])
+		assertNil(t, db.datalog.segments[1])
 	})
 
 	t.Run("no reclaimed", func(t *testing.T) {
@@ -114,12 +114,12 @@ func TestCompaction(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		assertEqual(t, 7, numFiles())
+		assertEqual(t, 7, numSegments())
 
 		cr, err := db.Compact()
 		assertNil(t, err)
 		assertEqual(t, CompactionResult{}, cr)
-		assertEqual(t, 7, numFiles())
+		assertEqual(t, 7, numSegments())
 	})
 
 	t.Run("compact single file", func(t *testing.T) {
@@ -130,8 +130,8 @@ func TestCompaction(t *testing.T) {
 		}
 		cr, err := db.Compact()
 		assertNil(t, err)
-		assertEqual(t, CompactionResult{CompactedFiles: 1, ReclaimedRecords: 40, ReclaimedBytes: 480}, cr)
-		assertEqual(t, 7, numFiles())
+		assertEqual(t, CompactionResult{CompactedSegments: 1, ReclaimedRecords: 40, ReclaimedBytes: 480}, cr)
+		assertEqual(t, 7, numSegments())
 	})
 
 	t.Run("compact multiple files", func(t *testing.T) {
@@ -142,8 +142,8 @@ func TestCompaction(t *testing.T) {
 		}
 		cr, err := db.Compact()
 		assertNil(t, err)
-		assertEqual(t, CompactionResult{CompactedFiles: 2, ReclaimedRecords: 84, ReclaimedBytes: 1008}, cr)
-		assertEqual(t, 7, numFiles())
+		assertEqual(t, CompactionResult{CompactedSegments: 2, ReclaimedRecords: 84, ReclaimedBytes: 1008}, cr)
+		assertEqual(t, 7, numSegments())
 	})
 
 	for i = 0; i < n; i++ {
@@ -161,8 +161,8 @@ func TestCompaction(t *testing.T) {
 func TestBackgroundCompaction(t *testing.T) {
 	opts := &Options{
 		BackgroundCompactionInterval: time.Millisecond,
-		maxDatafileSize:              1024,
-		compactionMinDatafileSize:    512,
+		maxSegmentSize:               1024,
+		compactionMinSegmentSize:     512,
 		compactionMinFragmentation:   0.2,
 	}
 
@@ -176,7 +176,7 @@ func TestBackgroundCompaction(t *testing.T) {
 	}
 
 	completeWithin(t, time.Minute, func() bool {
-		return countDatafiles(t, db) == 1
+		return countSegments(t, db) == 1
 	})
 
 	assertNil(t, db.Close())

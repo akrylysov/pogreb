@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 )
 
-func (db *DB) moveRecord(rec datafileRecord) (bool, error) {
+func (db *DB) moveRecord(rec record) (bool, error) {
 	hash := db.hash(rec.key)
 	reclaimed := true
 	err := db.index.forEachBucket(db.index.bucketIndex(hash), func(b bucketHandle) (bool, error) {
@@ -12,13 +12,13 @@ func (db *DB) moveRecord(rec datafileRecord) (bool, error) {
 			if sl.offset == 0 {
 				return b.next == 0, nil
 			}
-			if hash == sl.hash && rec.offset == sl.offset && rec.fileID == sl.fileID {
-				fileID, offset, err := db.datalog.writeRecord(rec.data) // TODO: batch writes
+			if hash == sl.hash && rec.offset == sl.offset && rec.segmentID == sl.segmentID {
+				segmentID, offset, err := db.datalog.writeRecord(rec.data) // TODO: batch writes
 				if err != nil {
 					return true, err
 				}
 				// Update index.
-				b.slots[i].fileID = fileID
+				b.slots[i].segmentID = segmentID
 				b.slots[i].offset = offset
 				reclaimed = false
 				return true, b.write()
@@ -31,20 +31,20 @@ func (db *DB) moveRecord(rec datafileRecord) (bool, error) {
 
 // CompactionResult holds the compaction result.
 type CompactionResult struct {
-	CompactedFiles   int
-	ReclaimedRecords int
-	ReclaimedBytes   int
+	CompactedSegments int
+	ReclaimedRecords  int
+	ReclaimedBytes    int
 }
 
-func (db *DB) compact(f *datafile) (CompactionResult, error) {
+func (db *DB) compact(f *segment) (CompactionResult, error) {
 	cr := CompactionResult{}
 
 	db.mu.Lock()
 	f.meta.Full = true // Prevent writes to the compacted file.
 	db.mu.Unlock()
 
-	// Move records from f to the current data file.
-	it, err := newDatafileIterator(f)
+	// Move records from f to the current segment.
+	it, err := newSegmentIterator(f)
 	if err != nil {
 		return cr, err
 	}
@@ -77,23 +77,19 @@ func (db *DB) compact(f *datafile) (CompactionResult, error) {
 	}
 
 	db.mu.Lock()
-	err = db.datalog.removeFile(f)
-	db.mu.Unlock()
-	if err != nil {
-		return cr, err
-	}
-
-	return cr, nil
+	defer db.mu.Unlock()
+	err = db.datalog.removeSegment(f)
+	return cr, err
 }
 
-func (db *DB) pickForCompaction() ([]*datafile, error) {
-	files, err := db.datalog.filesByModification()
+func (db *DB) pickForCompaction() ([]*segment, error) {
+	segments, err := db.datalog.segmentsByModification()
 	if err != nil {
 		return nil, err
 	}
-	for i := len(files) - 1; i >= 0; i-- {
-		f := files[i]
-		if uint32(f.size) < db.opts.compactionMinDatafileSize {
+	for i := len(segments) - 1; i >= 0; i-- {
+		f := segments[i]
+		if uint32(f.size) < db.opts.compactionMinSegmentSize {
 			continue
 		}
 		fragmentation := float32(f.meta.DeletedBytes) / float32(f.size)
@@ -102,7 +98,7 @@ func (db *DB) pickForCompaction() ([]*datafile, error) {
 		}
 		// All files older than the file eligible for compaction have to be compacted.
 		// Delete records can be discarded only when older files contain no put records for the corresponding keys.
-		return files[:i+1], nil
+		return segments[:i+1], nil
 	}
 	return nil, nil
 }
@@ -120,18 +116,18 @@ func (db *DB) Compact() (CompactionResult, error) {
 	}()
 
 	db.mu.RLock()
-	files, err := db.pickForCompaction()
+	segments, err := db.pickForCompaction()
 	db.mu.RUnlock()
 	if err != nil {
 		return cr, err
 	}
 
-	for _, f := range files {
+	for _, f := range segments {
 		fcr, err := db.compact(f)
 		if err != nil {
 			return cr, err
 		}
-		cr.CompactedFiles++
+		cr.CompactedSegments++
 		cr.ReclaimedRecords += fcr.ReclaimedRecords
 		cr.ReclaimedBytes += fcr.ReclaimedBytes
 	}

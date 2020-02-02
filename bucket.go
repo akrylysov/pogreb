@@ -14,10 +14,10 @@ const (
 // slot corresponds to a single item in the hash table.
 type slot struct {
 	hash      uint32
-	fileID    uint16 // Datafile ID.
+	segmentID uint16
 	keySize   uint16
 	valueSize uint32
-	offset    uint32 // Datafile offset.
+	offset    uint32 // Segment offset.
 }
 
 func (sl slot) kvSize() uint32 {
@@ -43,7 +43,7 @@ func (b bucket) MarshalBinary() ([]byte, error) {
 	for i := 0; i < slotsPerBucket; i++ {
 		sl := b.slots[i]
 		binary.LittleEndian.PutUint32(buf[:4], sl.hash)
-		binary.LittleEndian.PutUint16(buf[4:6], sl.fileID)
+		binary.LittleEndian.PutUint16(buf[4:6], sl.segmentID)
 		binary.LittleEndian.PutUint16(buf[6:8], sl.keySize)
 		binary.LittleEndian.PutUint32(buf[8:12], sl.valueSize)
 		binary.LittleEndian.PutUint32(buf[12:16], sl.offset)
@@ -57,7 +57,7 @@ func (b *bucket) UnmarshalBinary(data []byte) error {
 	for i := 0; i < slotsPerBucket; i++ {
 		_ = data[16] // bounds check hint to compiler; see golang.org/issue/14808
 		b.slots[i].hash = binary.LittleEndian.Uint32(data[:4])
-		b.slots[i].fileID = binary.LittleEndian.Uint16(data[4:6])
+		b.slots[i].segmentID = binary.LittleEndian.Uint16(data[4:6])
 		b.slots[i].keySize = binary.LittleEndian.Uint16(data[6:8])
 		b.slots[i].valueSize = binary.LittleEndian.Uint32(data[8:12])
 		b.slots[i].offset = binary.LittleEndian.Uint32(data[12:16])

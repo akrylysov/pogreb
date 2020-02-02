@@ -71,7 +71,7 @@ func Open(path string, opts *Options) (*DB, error) {
 		}
 	}()
 	if acquiredExistingLock {
-		if err := backupNondataFiles(path); err != nil {
+		if err := backupNonsegmentFiles(path); err != nil {
 			return nil, err
 		}
 	}
@@ -179,7 +179,7 @@ func (db *DB) startBackgroundWorker() {
 			case <-compactC:
 				if cr, err := db.Compact(); err != nil {
 					logger.Printf("error compacting databse: %v", err)
-				} else if cr.CompactedFiles > 0 {
+				} else if cr.CompactedSegments > 0 {
 					logger.Printf("compacted database: %+v", cr)
 				}
 			}
@@ -275,7 +275,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 
 	sl := slot{
 		hash:      h,
-		fileID:    fileID,
+		segmentID: fileID,
 		keySize:   uint16(len(key)),
 		valueSize: uint32(len(value)),
 		offset:    offset,

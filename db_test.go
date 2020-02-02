@@ -109,7 +109,7 @@ func TestEmpty(t *testing.T) {
 }
 
 func TestSimple(t *testing.T) {
-	db, err := createTestDB(&Options{maxDatafileSize: 1024})
+	db, err := createTestDB(&Options{maxSegmentSize: 1024})
 	assertNil(t, err)
 	var i byte
 	var n uint8 = 255
@@ -174,7 +174,7 @@ func TestSimple(t *testing.T) {
 
 	// Simulate crash.
 	assertNil(t, touchFile(filepath.Join("test.db", lockName)))
-	assertNil(t, os.Remove(filepath.Join("test.db", datafileMetaName(0))))
+	assertNil(t, os.Remove(filepath.Join("test.db", segmentMetaName(0))))
 	assertNil(t, os.Remove(filepath.Join("test.db", indexMetaName)))
 
 	// Open and check again
@@ -182,8 +182,8 @@ func TestSimple(t *testing.T) {
 	assertNil(t, err)
 	verifyKeysAndClose(0)
 
-	assertEqual(t, datafileMeta{TotalRecords: 43, DeletedBytes: 11}, *db.datalog.files[0].meta)
-	assertEqual(t, datafileMeta{TotalRecords: 42}, *db.datalog.files[1].meta)
+	assertEqual(t, segmentMeta{TotalRecords: 43, DeletedBytes: 11}, *db.datalog.segments[0].meta)
+	assertEqual(t, segmentMeta{TotalRecords: 42}, *db.datalog.segments[1].meta)
 
 	// Update all items
 	db, err = Open("test.db", nil)
