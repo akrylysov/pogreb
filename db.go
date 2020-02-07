@@ -383,12 +383,12 @@ func (db *DB) Metrics() Metrics {
 // FileSize returns the total size of the disk storage used by the DB.
 func (db *DB) FileSize() (int64, error) {
 	var size int64
-	infos, err := ioutil.ReadDir(db.opts.path)
+	files, err := ioutil.ReadDir(db.opts.path)
 	if err != nil {
 		return 0, err
 	}
-	for _, info := range infos {
-		size += info.Size()
+	for _, file := range files {
+		size += file.Size()
 	}
 	return size, nil
 }

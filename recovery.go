@@ -7,31 +7,54 @@ import (
 	"path/filepath"
 )
 
+const (
+	recoveryBackupExt = ".bac"
+)
+
 func backupNonsegmentFiles(path string) error {
 	logger.Println("moving non-segment files...")
 
-	// move all index and meta files to tmp
-	tmpDir, err := ioutil.TempDir("", "pogreb_recovery")
+	files, err := ioutil.ReadDir(path)
 	if err != nil {
 		return err
 	}
 
-	names, err := ioutil.ReadDir(path)
-	if err != nil {
-		return err
-	}
-
-	for _, name := range names {
-		ext := filepath.Ext(name.Name())
-		if ext != metaExt && ext != indexExt {
+	for _, file := range files {
+		name := file.Name()
+		ext := filepath.Ext(name)
+		if ext == segmentExt || name == lockName {
 			continue
 		}
-		oldpath := filepath.Join(path, name.Name())
-		newpath := filepath.Join(tmpDir, name.Name())
-		if err := os.Rename(oldpath, newpath); err != nil {
+		src := filepath.Join(path, name)
+		dst := src + recoveryBackupExt
+		if err := os.Rename(src, dst); err != nil {
 			return err
 		}
-		logger.Printf("moved %s to %s", oldpath, newpath)
+		logger.Printf("moved %s to %s", src, dst)
+	}
+
+	return nil
+}
+
+func removeRecoveryBackupFiles(path string) error {
+	logger.Println("removing recovery backup files...")
+
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		name := file.Name()
+		ext := filepath.Ext(name)
+		if ext != recoveryBackupExt {
+			continue
+		}
+		src := filepath.Join(path, name)
+		if err := os.Remove(src); err != nil {
+			return err
+		}
+		logger.Printf("removed %s", src)
 	}
 
 	return nil
@@ -126,6 +149,10 @@ func (db *DB) recover() error {
 				return err
 			}
 		}
+	}
+
+	if err := removeRecoveryBackupFiles(db.opts.path); err != nil {
+		logger.Printf("error removing recovery backups files: %v", err)
 	}
 
 	logger.Println("successfully recovered database")

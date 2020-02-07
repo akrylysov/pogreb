@@ -25,7 +25,7 @@ type datalog struct {
 }
 
 func openDatalog(opts *Options) (*datalog, error) {
-	names, err := ioutil.ReadDir(opts.path)
+	files, err := ioutil.ReadDir(opts.path)
 	if err != nil {
 		return nil, err
 	}
@@ -35,16 +35,17 @@ func openDatalog(opts *Options) (*datalog, error) {
 		modTime: time.Now().UnixNano(),
 	}
 
-	for _, name := range names {
-		ext := filepath.Ext(name.Name())
+	for _, file := range files {
+		name := file.Name()
+		ext := filepath.Ext(name)
 		if ext != segmentExt {
 			continue
 		}
-		id, err := strconv.ParseInt(strings.TrimSuffix(name.Name(), ext), 10, 16)
+		id, err := strconv.ParseInt(strings.TrimSuffix(name, ext), 10, 16)
 		if err != nil {
 			return nil, err
 		}
-		_, err = dl.openSegment(filepath.Join(opts.path, name.Name()), uint16(id))
+		_, err = dl.openSegment(filepath.Join(opts.path, name), uint16(id))
 		if err != nil {
 			return nil, err
 		}
