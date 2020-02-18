@@ -171,7 +171,7 @@ func (dl *datalog) trackOverwrite(sl slot) {
 func (dl *datalog) del(key []byte, sl slot) error {
 	dl.trackOverwrite(sl)
 	delRecord := encodeDeleteRecord(key)
-	_, _, err := dl.writeRecord(delRecord)
+	_, _, err := dl.writeRecord(delRecord, recordTypeDelete)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func (dl *datalog) del(key []byte, sl slot) error {
 	return nil
 }
 
-func (dl *datalog) writeRecord(data []byte) (uint16, uint32, error) {
+func (dl *datalog) writeRecord(data []byte, rt recordType) (uint16, uint32, error) {
 	if dl.curSeg.meta.Full || uint32(dl.curSeg.size)+uint32(len(data)) > dl.opts.maxSegmentSize {
 		dl.curSeg.meta.Full = true
 		if err := dl.swapSegment(); err != nil {
@@ -190,12 +190,17 @@ func (dl *datalog) writeRecord(data []byte) (uint16, uint32, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	dl.curSeg.meta.TotalRecords++
+	switch rt {
+	case recordTypePut:
+		dl.curSeg.meta.PutRecords++
+	case recordTypeDelete:
+		dl.curSeg.meta.DeleteRecords++
+	}
 	return dl.curSeg.id, uint32(off), nil
 }
 
 func (dl *datalog) writeKeyValue(key []byte, value []byte) (uint16, uint32, error) {
-	return dl.writeRecord(encodePutRecord(key, value))
+	return dl.writeRecord(encodePutRecord(key, value), recordTypePut)
 }
 
 func (dl *datalog) sync() error {

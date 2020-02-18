@@ -132,6 +132,7 @@ func (db *DB) recover() error {
 		}
 
 		h := db.hash(rec.key)
+		meta := db.datalog.segments[rec.segmentID].meta
 		if rec.rtype == recordTypePut {
 			sl := slot{
 				hash:      h,
@@ -143,11 +144,12 @@ func (db *DB) recover() error {
 			if err := db.put(sl, rec.key); err != nil {
 				return err
 			}
-			db.datalog.segments[rec.segmentID].meta.TotalRecords++
+			meta.PutRecords++
 		} else {
 			if err := db.del(h, rec.key); err != nil {
 				return err
 			}
+			meta.DeleteRecords++
 		}
 	}
 

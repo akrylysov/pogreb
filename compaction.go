@@ -13,7 +13,7 @@ func (db *DB) moveRecord(rec record) (bool, error) {
 				return b.next == 0, nil
 			}
 			if hash == sl.hash && rec.offset == sl.offset && rec.segmentID == sl.segmentID {
-				segmentID, offset, err := db.datalog.writeRecord(rec.data) // TODO: batch writes
+				segmentID, offset, err := db.datalog.writeRecord(rec.data, rec.rtype) // TODO: batch writes
 				if err != nil {
 					return true, err
 				}
@@ -87,20 +87,28 @@ func (db *DB) pickForCompaction() ([]*segment, error) {
 	if err != nil {
 		return nil, err
 	}
+	var picked []*segment
 	for i := len(segments) - 1; i >= 0; i-- {
-		f := segments[i]
-		if uint32(f.size) < db.opts.compactionMinSegmentSize {
+		seg := segments[i]
+
+		if uint32(seg.size) < db.opts.compactionMinSegmentSize {
 			continue
 		}
-		fragmentation := float32(f.meta.DeletedBytes) / float32(f.size)
+
+		fragmentation := float32(seg.meta.DeletedBytes) / float32(seg.size)
 		if fragmentation < db.opts.compactionMinFragmentation {
 			continue
 		}
-		// All files older than the file eligible for compaction have to be compacted.
-		// Delete records can be discarded only when older files contain no put records for the corresponding keys.
-		return segments[:i+1], nil
+
+		if seg.meta.DeleteRecords > 0 {
+			// Delete records can be discarded only when older files contain no put records for the corresponding keys.
+			// All files older than the file eligible for compaction have to be compacted.
+			return append(segments[:i+1], picked...), nil
+		}
+
+		picked = append([]*segment{seg}, picked...)
 	}
-	return nil, nil
+	return picked, nil
 }
 
 // Compact compacts the DB. Deleted and overwritten items are discarded.

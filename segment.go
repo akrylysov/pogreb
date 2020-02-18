@@ -31,10 +31,11 @@ func segmentName(id uint16) string {
 }
 
 type segmentMeta struct {
-	Full         bool
-	TotalRecords uint32
-	DeletedKeys  uint32
-	DeletedBytes uint32
+	Full          bool
+	PutRecords    uint32
+	DeleteRecords uint32
+	DeletedKeys   uint32
+	DeletedBytes  uint32
 }
 
 func segmentMetaName(id uint16) string {

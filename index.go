@@ -272,7 +272,7 @@ func (idx *index) split() error {
 	}
 
 	var overflowBuckets []int64
-	if err := idx.forEachBucket(updatedBucketIdx, func(curb bucketHandle) (bool, error) {
+	err = idx.forEachBucket(updatedBucketIdx, func(curb bucketHandle) (bool, error) {
 		for j := 0; j < slotsPerBucket; j++ {
 			sl := curb.slots[j]
 			if sl.offset == 0 {
@@ -292,7 +292,8 @@ func (idx *index) split() error {
 			overflowBuckets = append(overflowBuckets, curb.next)
 		}
 		return false, nil
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 

@@ -19,14 +19,14 @@ import (
 func assertEqual(t testing.TB, expected interface{}, actual interface{}) {
 	t.Helper()
 	if !reflect.DeepEqual(expected, actual) {
-		t.Fatalf("expected %v; got %v", expected, actual)
+		t.Fatalf("expected %+v; got %+v", expected, actual)
 	}
 }
 
 func assertNil(t testing.TB, actual interface{}) {
 	t.Helper()
 	if actual != nil && !reflect.ValueOf(actual).IsNil() {
-		t.Fatalf("expected nil; got %v", actual)
+		t.Fatalf("expected nil; got %+v", actual)
 	}
 }
 
@@ -182,8 +182,8 @@ func TestSimple(t *testing.T) {
 	assertNil(t, err)
 	verifyKeysAndClose(0)
 
-	assertEqual(t, segmentMeta{TotalRecords: 43, DeletedBytes: 11}, *db.datalog.segments[0].meta)
-	assertEqual(t, segmentMeta{TotalRecords: 42}, *db.datalog.segments[1].meta)
+	assertEqual(t, segmentMeta{PutRecords: 42, DeleteRecords: 1, DeletedBytes: 11}, *db.datalog.segments[0].meta)
+	assertEqual(t, segmentMeta{PutRecords: 42}, *db.datalog.segments[1].meta)
 
 	// Update all items
 	db, err = Open("test.db", nil)
