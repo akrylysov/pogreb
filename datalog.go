@@ -180,7 +180,7 @@ func (dl *datalog) del(key []byte, sl slot) error {
 }
 
 func (dl *datalog) writeRecord(data []byte, rt recordType) (uint16, uint32, error) {
-	if dl.curSeg.meta.Full || uint32(dl.curSeg.size)+uint32(len(data)) > dl.opts.maxSegmentSize {
+	if dl.curSeg.meta.Full || dl.curSeg.size+int64(len(data)) > int64(dl.opts.maxSegmentSize) {
 		dl.curSeg.meta.Full = true
 		if err := dl.swapSegment(); err != nil {
 			return 0, 0, err
