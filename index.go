@@ -310,16 +310,6 @@ func (idx *index) split() error {
 	return nil
 }
 
-func (idx *index) sync() error {
-	if err := idx.main.Sync(); err != nil {
-		return err
-	}
-	if err := idx.overflow.Sync(); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (idx *index) close() error {
 	if err := idx.writeMeta(); err != nil {
 		return err

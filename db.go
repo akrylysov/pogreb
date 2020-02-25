@@ -347,13 +347,7 @@ func (db *DB) Close() error {
 }
 
 func (db *DB) sync() error {
-	if err := db.datalog.sync(); err != nil {
-		return err
-	}
-	if err := db.index.sync(); err != nil {
-		return err
-	}
-	return nil
+	return db.datalog.sync()
 }
 
 // Items returns a new ItemIterator.
