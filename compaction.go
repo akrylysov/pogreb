@@ -12,17 +12,21 @@ func (db *DB) moveRecord(rec record) (bool, error) {
 			if sl.offset == 0 {
 				return b.next == 0, nil
 			}
-			if hash == sl.hash && rec.offset == sl.offset && rec.segmentID == sl.segmentID {
-				segmentID, offset, err := db.datalog.writeRecord(rec.data, rec.rtype) // TODO: batch writes
-				if err != nil {
-					return true, err
-				}
-				// Update index.
-				b.slots[i].segmentID = segmentID
-				b.slots[i].offset = offset
-				reclaimed = false
-				return true, b.write()
+
+			// Slot points to a different record.
+			if hash != sl.hash || rec.offset != sl.offset || rec.segmentID != sl.segmentID {
+				continue
 			}
+
+			segmentID, offset, err := db.datalog.writeRecord(rec.data, rec.rtype) // TODO: batch writes
+			if err != nil {
+				return true, err
+			}
+			// Update index.
+			b.slots[i].segmentID = segmentID
+			b.slots[i].offset = offset
+			reclaimed = false
+			return true, b.write()
 		}
 		return false, nil
 	})
@@ -43,11 +47,11 @@ func (db *DB) compact(f *segment) (CompactionResult, error) {
 	f.meta.Full = true // Prevent writes to the compacted file.
 	db.mu.Unlock()
 
-	// Move records from f to the current segment.
 	it, err := newSegmentIterator(f)
 	if err != nil {
 		return cr, err
 	}
+	// Move records from f to the current segment.
 	for {
 		err := func() error {
 			db.mu.Lock()
