@@ -45,7 +45,7 @@ func main() {
 
 ### Writing to a database
 
-Use the `DB.Put()` function to insert a new key/value pair:
+Use the `DB.Put()` function to insert a new key-value pair:
 
 ```go
 err := db.Put([]byte("testKey"), []byte("testValue"))
@@ -56,7 +56,7 @@ if err != nil {
 
 ### Reading from a database
 
-Use the `DB.Get()` function to retrieve the inserted value:
+To retrieve the inserted value, use the `DB.Get()` function:
 
 ```go
 val, err := db.Get([]byte("testKey"))
@@ -68,17 +68,17 @@ log.Printf("%s", val)
 
 ### Iterating over items
 
-Use the `DB.Items()` function which returns a new instance of `ItemIterator`:
+To iterate over items, use `ItemIterator` returned by `DB.Items()`:
 
 ```go
 it := db.Items()
 for {
     key, val, err := it.Next()
-    if err != nil {
-        if err != pogreb.ErrIterationDone {
-            log.Fatal(err)
-        }
-        break
+    if err == pogreb.ErrIterationDone {
+    	break
+    }
+    if err != nil { 
+        log.Fatal(err)
     }
     log.Printf("%s %s", key, val)
 }
@@ -95,4 +95,4 @@ on DigitalOcean 8 CPUs / 16 GB RAM / 160 GB SSD + Ubuntu 16.04.3 (higher is bett
 
 ## Internals
 
-[Pogreb - how it works](https://artem.krylysov.com/blog/2018/03/24/pogreb-key-value-store/).
+[Design document](/docs/design.md).

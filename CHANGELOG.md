@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.0] - 2020-03-08
+## Changed
+- Replace the unstructured data file for storing key-value pairs with a write-ahead log.
+### Added
+- In the event of a crash or a power loss the database is automatically recovered.
+- Optional background compaction allows reclaiming disk space occupied by overwritten or deleted keys.
+### Fixed
+- Fix disk space overhead when storing small keys and values. 
+
 ## [0.8.3] - 2019-11-03
 ### Fixed
 - Fix slice bounds out of range error mapping files on Windows.

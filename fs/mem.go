@@ -14,14 +14,14 @@ type memfs struct {
 var Mem = &memfs{files: map[string]*memfile{}}
 
 func (fs *memfs) OpenFile(name string, flag int, perm os.FileMode) (MmapFile, error) {
-	// TODO: respect flag
 	f := fs.files[name]
-	if f == nil {
+	if f == nil || (flag&os.O_TRUNC) != 0 {
 		f = &memfile{}
 		fs.files[name] = f
 	} else if !f.closed {
 		return nil, os.ErrExist
 	} else {
+		f.offset = 0
 		f.closed = false
 	}
 	return f, nil
@@ -81,9 +81,13 @@ func (m *memfile) ReadAt(p []byte, off int64) (int, error) {
 	if m.closed {
 		return 0, os.ErrClosed
 	}
+	if off >= m.size {
+		return 0, io.EOF
+	}
 	n := len(p)
 	if int64(n) > m.size-off {
-		return 0, io.EOF
+		copy(p, m.buf[off:])
+		return int(m.size - off), io.EOF
 	}
 	copy(p, m.buf[off:off+int64(n)])
 	return n, nil

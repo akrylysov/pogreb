@@ -11,7 +11,7 @@ const lockTestPath = "test.lock"
 var lockTestMode = os.FileMode(0666)
 
 func testLockFile(fs FileSystem, t *testing.T) {
-	fs.Remove(lockTestPath)
+	_ = fs.Remove(lockTestPath)
 	lock, needRecovery, err := fs.CreateLockFile(lockTestPath, lockTestMode)
 	if lock == nil || needRecovery || err != nil {
 		t.Fatal(lock, err, needRecovery)
@@ -28,8 +28,10 @@ func testLockFile(fs FileSystem, t *testing.T) {
 	}
 }
 
-func testLockFileNeedsRecovery(fs FileSystem, t *testing.T) {
-	ioutil.WriteFile(lockTestPath, []byte{}, lockTestMode)
+func testLockFileAcquireExisting(fs FileSystem, t *testing.T) {
+	if err := ioutil.WriteFile(lockTestPath, []byte{}, lockTestMode); err != nil {
+		t.Fatal(err)
+	}
 	lock, needRecovery, err := fs.CreateLockFile(lockTestPath, lockTestMode)
 	if lock == nil || !needRecovery || err != nil {
 		t.Fatal(lock, err, needRecovery)

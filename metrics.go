@@ -8,7 +8,6 @@ type Metrics struct {
 	Dels           *expvar.Int
 	Gets           *expvar.Int
 	HashCollisions *expvar.Int
-	BucketProbes   *expvar.Int
 }
 
 func newMetrics() Metrics {
@@ -17,6 +16,5 @@ func newMetrics() Metrics {
 		Dels:           &expvar.Int{},
 		Gets:           &expvar.Int{},
 		HashCollisions: &expvar.Int{},
-		BucketProbes:   &expvar.Int{},
 	}
 }

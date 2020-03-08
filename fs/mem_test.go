@@ -101,6 +101,19 @@ func TestMemfile(t *testing.T) {
 		}
 	})
 
+	t.Run("Seek(0, SeekStart) and Read larger than file", func(t *testing.T) {
+		off, err := f.Seek(0, io.SeekStart)
+		if off != 0 || err != nil {
+			t.Fatal()
+		}
+
+		bl := make([]byte, 4096)
+		n, err := f.Read(bl)
+		if n != len(testData) || err != io.EOF || !bytes.Equal(testData, bl[:n]) {
+			t.Fatal()
+		}
+	})
+
 	t.Run("Seek(2, SeekStart) and Read", func(t *testing.T) {
 		testOff := int64(2)
 		lbuf := make([]byte, 8)

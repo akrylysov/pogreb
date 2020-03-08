@@ -1,154 +1,163 @@
 package pogreb
 
 import (
-	"math"
-	"sort"
+	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 )
 
-func align51264(n int64) int64 {
-	return (n + 511) &^ 511
-}
+const (
+	recoveryBackupExt = ".bac"
+)
 
-func truncateFiles(db *DB) error {
-	db.index.size = align51264(db.index.size)
-	if err := db.index.Truncate(db.index.size); err != nil {
-		return err
-	}
-	if err := db.index.Mmap(db.index.size); err != nil {
-		return err
-	}
-	db.data.size = align51264(db.data.size)
-	if err := db.data.Truncate(db.data.size); err != nil {
-		return err
-	}
-	if err := db.data.Mmap(db.data.size); err != nil {
-		return err
-	}
-	return nil
-}
+func backupNonsegmentFiles(path string) error {
+	logger.Println("moving non-segment files...")
 
-func getUsedBlocks(db *DB) (uint32, []block, error) {
-	var itemCount uint32
-	var usedBlocks []block
-	for bucketIdx := uint32(0); bucketIdx < db.nBuckets; bucketIdx++ {
-		err := db.forEachBucket(bucketIdx, func(b bucketHandle) (bool, error) {
-			for i := 0; i < slotsPerBucket; i++ {
-				sl := b.slots[i]
-				if sl.kvOffset == 0 {
-					return true, nil
-				}
-				itemCount++
-				usedBlocks = append(usedBlocks, block{size: align512(sl.kvSize()), offset: sl.kvOffset})
-			}
-			if b.next != 0 {
-				usedBlocks = append(usedBlocks, block{size: bucketSize, offset: b.next})
-			}
-			return false, nil
-		})
-		if err != nil {
-			return 0, nil, err
-		}
-	}
-	return itemCount, usedBlocks, nil
-}
-
-func recoverSplitCrash(db *DB) error {
-	if db.nBuckets == 1 {
-		return nil
-	}
-	prevnBuckets := db.nBuckets - 1
-	prevLevel := uint8(math.Floor(math.Log2(float64(prevnBuckets))))
-	prevSplitBucketIdx := prevnBuckets - (uint32(1) << prevLevel)
-	splitCrash := false
-	err := db.forEachBucket(prevSplitBucketIdx, func(b bucketHandle) (bool, error) {
-		for i := 0; i < slotsPerBucket; i++ {
-			sl := b.slots[i]
-			if sl.kvOffset == 0 {
-				return true, nil
-			}
-			if db.bucketIndex(sl.hash) != prevSplitBucketIdx {
-				splitCrash = true
-				return true, nil
-			}
-		}
-		return false, nil
-	})
+	files, err := ioutil.ReadDir(path)
 	if err != nil {
 		return err
 	}
-	if !splitCrash {
-		return nil
+
+	for _, file := range files {
+		name := file.Name()
+		ext := filepath.Ext(name)
+		if ext == segmentExt || name == lockName {
+			continue
+		}
+		src := filepath.Join(path, name)
+		dst := src + recoveryBackupExt
+		if err := os.Rename(src, dst); err != nil {
+			return err
+		}
+		logger.Printf("moved %s to %s", src, dst)
 	}
-	logger.Print("Detected split crash. Truncating index file...")
-	if err := db.index.Truncate(db.index.size - int64(bucketSize)); err != nil {
-		return err
-	}
-	db.index.size -= int64(bucketSize)
-	if err := db.index.Mmap(db.index.size); err != nil {
-		return err
-	}
-	db.nBuckets = prevnBuckets
-	db.level = prevLevel
-	db.splitBucketIdx = prevSplitBucketIdx
+
 	return nil
 }
 
-func recoverFreeList(db *DB, usedBlocks []block) error {
-	if len(usedBlocks) == 0 {
-		return nil
+func removeRecoveryBackupFiles(path string) error {
+	logger.Println("removing recovery backup files...")
+
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return err
 	}
-	sort.Slice(usedBlocks, func(i, j int) bool {
-		return usedBlocks[i].offset < usedBlocks[j].offset
-	})
-	fl := freelist{}
-	expectedOff := int64(headerSize)
-	for _, bl := range usedBlocks {
-		if bl.offset > expectedOff {
-			fl.free(expectedOff, uint32(bl.offset-expectedOff))
+
+	for _, file := range files {
+		name := file.Name()
+		ext := filepath.Ext(name)
+		if ext != recoveryBackupExt {
+			continue
 		}
-		expectedOff = bl.offset + int64(bl.size)
+		src := filepath.Join(path, name)
+		if err := os.Remove(src); err != nil {
+			return err
+		}
+		logger.Printf("removed %s", src)
 	}
-	lastBlock := usedBlocks[len(usedBlocks)-1]
-	lastOffset := int64(lastBlock.size) + lastBlock.offset
-	if db.data.size > lastOffset {
-		fl.free(lastOffset, uint32(db.data.size-lastOffset))
-		logger.Println(lastBlock, db.data.size)
-	}
-	logger.Printf("Recovered freelist. Old len=%d; new len=%d\n", len(db.data.fl.blocks), len(fl.blocks))
-	db.data.fl = fl
+
 	return nil
+}
+
+// recoveryIterator iterates over records of all datalog files in insertion order.
+// Corrupted files are truncated to the last valid record.
+type recoveryIterator struct {
+	files []*segment
+	dit   *segmentIterator
+}
+
+func newRecoveryIterator(dl *datalog) (*recoveryIterator, error) {
+	files, err := dl.segmentsByModification()
+	if err != nil {
+		return nil, err
+	}
+	return &recoveryIterator{
+		files: files,
+	}, nil
+}
+
+func (it *recoveryIterator) next() (record, error) {
+	for {
+		if it.dit == nil {
+			if len(it.files) == 0 {
+				return record{}, ErrIterationDone
+			}
+			var err error
+			it.dit, err = newSegmentIterator(it.files[0])
+			if err != nil {
+				return record{}, err
+			}
+			it.files = it.files[1:]
+		}
+		rec, err := it.dit.next()
+		if err == io.EOF || err == io.ErrUnexpectedEOF || err == errCorrupted {
+			// Truncate file to the last valid offset.
+			if err := it.dit.f.truncate(it.dit.offset); err != nil {
+				return record{}, err
+			}
+			fi, fierr := it.dit.f.Stat()
+			if fierr != nil {
+				return record{}, fierr
+			}
+			logger.Printf("truncated data file %s to offset %d", fi.Name(), it.dit.offset)
+			err = ErrIterationDone
+		}
+		if err == ErrIterationDone {
+			it.dit = nil
+			continue
+		}
+		if err != nil {
+			return record{}, err
+		}
+		return rec, nil
+	}
 }
 
 func (db *DB) recover() error {
-	logger.Println("Performing recovery...")
-	logger.Printf("Index file size=%d; data file size=%d\n", db.index.size, db.data.size)
-	logger.Printf("Header dbInfo %+v\n", db.dbInfo)
+	logger.Println("started recovery")
 
-	// Truncate index and data files.
-	if err := truncateFiles(db); err != nil {
-		return err
-	}
-
-	// Recover header.
-	db.nBuckets = uint32((db.index.size - int64(headerSize)) / int64(bucketSize))
-	db.level = uint8(math.Floor(math.Log2(float64(db.nBuckets))))
-	db.splitBucketIdx = db.nBuckets - (uint32(1) << db.level)
-	itemCount, usedBlocks, err := getUsedBlocks(db)
+	logger.Println("rebuilding index...")
+	it, err := newRecoveryIterator(db.datalog)
 	if err != nil {
 		return err
 	}
-	db.count = itemCount
+	for {
+		rec, err := it.next()
+		if err == ErrIterationDone {
+			break
+		}
+		if err != nil {
+			return err
+		}
 
-	// Check if crash occurred during split.
-	if err := recoverSplitCrash(db); err != nil {
-		return err
+		h := db.hash(rec.key)
+		meta := db.datalog.segments[rec.segmentID].meta
+		if rec.rtype == recordTypePut {
+			sl := slot{
+				hash:      h,
+				segmentID: rec.segmentID,
+				keySize:   uint16(len(rec.key)),
+				valueSize: uint32(len(rec.value)),
+				offset:    rec.offset,
+			}
+			if err := db.put(sl, rec.key); err != nil {
+				return err
+			}
+			meta.PutRecords++
+		} else {
+			if err := db.del(h, rec.key); err != nil {
+				return err
+			}
+			meta.DeleteRecords++
+		}
 	}
-	logger.Printf("Recovered dbInfo %+v\n", db.dbInfo)
 
-	// Recover free list.
-	if err := recoverFreeList(db, usedBlocks); err != nil {
-		return err
+	if err := removeRecoveryBackupFiles(db.opts.path); err != nil {
+		logger.Printf("error removing recovery backups files: %v", err)
 	}
-	logger.Println("Recovery complete.")
+
+	logger.Println("successfully recovered database")
+
 	return nil
 }

@@ -78,7 +78,23 @@ func (f *osfile) Close() error {
 	return f.File.Close()
 }
 
+func (f *osfile) munmap() error {
+	if f.data == nil {
+		return nil
+	}
+	if err := munmap(f.data); err != nil {
+		return err
+	}
+	f.data = nil
+	f.mmapSize = 0
+	return nil
+}
+
 func (f *osfile) Mmap(fileSize int64) error {
+	if fileSize == 0 {
+		return f.munmap()
+	}
+
 	mmapSize := f.mmapSize
 
 	if mmapSize >= fileSize {
@@ -102,7 +118,7 @@ func (f *osfile) Mmap(fileSize int64) error {
 		return err
 	}
 
-	madviceRandom(data)
+	_ = madviceRandom(data)
 
 	f.data = data
 	f.mmapSize = mappedSize
