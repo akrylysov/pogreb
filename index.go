@@ -155,7 +155,7 @@ func (idx *index) put(sl slot, cb func(slot) (bool, error)) error {
 			}
 		}
 		if b.next == 0 {
-			// Couldn't find free space in the current bucket, creating a new overflow bucket.
+			// Couldn't find free space in the current bucket, create a new overflow bucket.
 			nextBucket, err := idx.createOverflowBucket()
 			if err != nil {
 				return false, err

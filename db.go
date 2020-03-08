@@ -195,6 +195,9 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	defer db.mu.RUnlock()
 	var retValue []byte
 	err := db.index.get(h, func(sl slot) (bool, error) {
+		if uint16(len(key)) != sl.keySize {
+			return false, nil
+		}
 		slKey, value, err := db.datalog.readKeyValue(sl)
 		if err != nil {
 			return true, err
