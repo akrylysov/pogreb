@@ -6,7 +6,7 @@
 This document is a new version of the initial Pogreb design
 [blog post](https://artem.krylysov.com/blog/2018/03/24/pogreb-key-value-store/) published in 2018.
 
-The new version replaces an unstructured data file for storing key-value pairs with a write-ahead log to achieve
+The new version replaces the unstructured data file for storing key-value pairs with a write-ahead log to achieve
 durability.
 
 # Overview
