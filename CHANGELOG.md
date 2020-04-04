@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.9.1] - 2020-04-03
+## Changed
+- Improve Go 1.14 compatibility (remove "unsafe" usage).
+
 ## [0.9.0] - 2020-03-08
 ## Changed
 - Replace the unstructured data file for storing key-value pairs with a write-ahead log.
