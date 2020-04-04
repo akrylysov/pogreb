@@ -18,7 +18,7 @@ It aims to provide fast point lookups by indexing keys in an on-disk hash table.
 
 Two key components of Pogeb are a write-ahead log (WAL) and a hash table index.
 The WAL stores key-value pairs on disk in append-only files.
-The on-disk hash table allows performing constant time lookups from keys to key-value pairs in the WAL.
+The on-disk hash table allows constant time lookups from keys to key-value pairs in the WAL.
 
 ## Write-ahead log
 
@@ -54,9 +54,9 @@ Record
 
 The Record Type field is either `Put` (0) or `Delete` (1).
 
-## Hash index
+## Hash table index
 
-Pogreb uses two files to store the hash index on disk - "main" and "overflow" index files.
+Pogreb uses two files to store the hash table on disk - "main" and "overflow" index files.
 
 Each index file holds an array of buckets.
 
@@ -69,7 +69,7 @@ Index
 
 ### Bucket
 
-Each bucket is an array of slots followed by an optional file pointer to the overflow bucket (stored in the "overflow"
+A bucket is an array of slots followed by an optional file pointer to the overflow bucket (stored in the "overflow"
 index).
 The number of slots in a bucket is 31 - that is the maximum number of slots that is possible to fit in 512
 bytes.
@@ -104,8 +104,8 @@ For example, a hash table with *L=0* contains between 0 and 1 buckets; *L=3* con
 
 *S* is the index of the "split" bucket (initially *S=0*).
 
-Collisions are resolved using the bucket chaining method.
-Overflow buckets are stored in an "overflow index" file and form a linked list.
+Collisions are resolved using the bucket chaining technique.
+The "overflow" index file stores overflow buckets that form a linked list.
 
 ### Lookup
 
@@ -131,9 +131,10 @@ h(key) -> | Bucket 1 | -> | Slot 0 | Slot 1 | ... | Slot N |
 
 To get the position of the bucket:
 
-- Hash the key (Pogreb uses the 32-bit version of MurmurHash3).
-- Use 2<sup>L</sup> bits of the hash to get the position of the bucket - `hash % math.Pow(2, L)`.
-- If the calculated position comes before the split bucket *S*, the position is `hash % math.Pow(2, L+1)`.
+1. Hash the key (Pogreb uses the 32-bit version of MurmurHash3).
+2. Use 2<sup>L</sup> bits of the hash to get the position of the bucket - `hash % math.Pow(2, L)`.
+3. Set the position to `hash % math.Pow(2, L+1)` if the previously calculated position comes before the
+split bucket *S*.
 
 The lookup function reads a bucket at the given position from the index file and performs a linear search to find a slot
 with the required hash.
@@ -155,12 +156,12 @@ If the bucket has all of its slots occupied, a new overflow bucket is created.
 When the number of items in the hash table exceeds the load factor threshold (70%), the split operation is performed on
 the split bucket *S*:
 
-- A new bucket is allocated at the end of the index file.
-- The split bucket index *S* is incremented.
-- If *S* points to 2<sup>L</sup>, *S* is reset to 0 and *L* is incremented.
-- The items from the old split bucket are separated between the newly allocated bucket and the old split bucket by
+1. Allocate a new bucket at the end of the index file.
+2. Increment the split bucket index *S*.
+3. Increment *L* and reset *S* to 0 if *S* points to 2<sup>L</sup>. 
+4. Divide items from the old split bucket between the newly allocated bucket and the old split bucket by
 recalculating the positions of the keys in the hash table.
-- The number of buckets *N* is incremented.
+5. Increment the number of buckets *N*.
 
 ### Removal
 
