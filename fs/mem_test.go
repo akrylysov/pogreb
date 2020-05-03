@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"testing"
+
+	"github.com/akrylysov/pogreb/internal/assert"
 )
 
 func TestMemfile(t *testing.T) {
@@ -37,25 +39,48 @@ func TestMemfile(t *testing.T) {
 	t.Run("Write", func(t *testing.T) {
 		off, err := f.Seek(0, io.SeekCurrent)
 		if off != 0 || err != nil {
-			t.Fatal()
+			t.Fatal(off, err)
 		}
 
 		n, err := f.Write(testData)
 		if n != len(testData) || err != nil {
-			t.Fatal()
+			t.Fatal(n, err)
 		}
+
+		b, err := f.Slice(1, 10)
+		assert.Nil(t, err)
+		assert.Equal(t, testData[1:], b)
+
+		writeatN, err := f.WriteAt(testData[1:], 1)
+		if writeatN != len(testData)-1 || err != nil {
+			t.Fatal(writeatN, err)
+		}
+
+		b, err = f.Slice(0, 10)
+		assert.Nil(t, err)
+		assert.Equal(t, testData, b)
 
 		off, err = f.Seek(0, io.SeekCurrent)
 		if off != int64(n) || err != nil {
-			t.Fatal()
+			t.Fatal(off, err)
 		}
+
+		assert.Nil(t, f.Sync())
+
+		assert.Panic(t, "trying to write past EOF - undefined behavior", func() {
+			_, _ = f.WriteAt(testData, 100)
+		})
 	})
 
-	t.Run("Size", func(t *testing.T) {
+	t.Run("Stat", func(t *testing.T) {
 		fi, err := f.Stat()
-		if fi.Size() != int64(len(testData)) || err != nil {
-			t.Fatal()
-		}
+		assert.Nil(t, err)
+		assert.Equal(t, "test", fi.Name())
+		assert.Equal(t, int64(len(testData)), fi.Size())
+		assert.Equal(t, os.FileMode(0), fi.Mode()) // Not implemented
+		fi.ModTime()
+		assert.Equal(t, false, fi.IsDir())
+		assert.Nil(t, fi.Sys())
 	})
 
 	t.Run("ReadAt", func(t *testing.T) {
@@ -146,6 +171,24 @@ func TestMemfile(t *testing.T) {
 		}
 	})
 
+	t.Run("Truncate(2), ReadAt and Size", func(t *testing.T) {
+		lbuf := make([]byte, 2)
+		err := f.Truncate(2)
+		if err != nil {
+			t.Fatal()
+		}
+
+		n, err := f.ReadAt(lbuf, 0)
+		if n != 2 || err != nil || lbuf[0] != 0 {
+			t.Fatal(err, n, lbuf)
+		}
+
+		fi, err := f.Stat()
+		if fi.Size() != 2 || err != nil {
+			t.Fatal()
+		}
+	})
+
 	t.Run("Truncate(0), ReadAt and Size", func(t *testing.T) {
 		err := f.Truncate(0)
 		if err != nil {
@@ -163,17 +206,42 @@ func TestMemfile(t *testing.T) {
 		}
 	})
 
-	t.Run("Close, Stat", func(t *testing.T) {
-		if err := f.Close(); err != nil {
-			t.Fatal()
-		}
+	t.Run("Close", func(t *testing.T) {
+		assert.Nil(t, f.Close())
 
-		if err := f.Close(); err == nil {
-			t.Fatal()
-		}
+		assert.Equal(t, os.ErrClosed, f.Close())
+		assert.Equal(t, os.ErrClosed, f.Sync())
+		assert.Equal(t, os.ErrClosed, f.Truncate(0))
 
-		if _, err := f.Stat(); err == nil {
-			t.Fatal()
-		}
+		_, err := f.Stat()
+		assert.Equal(t, os.ErrClosed, err)
+
+		_, err = f.Read(nil)
+		assert.Equal(t, os.ErrClosed, err)
+
+		_, err = f.ReadAt(nil, 0)
+		assert.Equal(t, os.ErrClosed, err)
+
+		_, err = f.Write(nil)
+		assert.Equal(t, os.ErrClosed, err)
+
+		_, err = f.WriteAt(nil, 0)
+		assert.Equal(t, os.ErrClosed, err)
+
+		_, err = f.Seek(0, 0)
+		assert.Equal(t, os.ErrClosed, err)
+
+		_, err = f.Slice(0, 0)
+		assert.Equal(t, os.ErrClosed, err)
+
+		assert.Nil(t, f.Mmap(0)) // Mmap does nothing
 	})
+}
+
+func TestMemLockFile(t *testing.T) {
+	testLockFile(t, Mem)
+}
+
+func TestMemLockAcquireExisting(t *testing.T) {
+	testLockFileAcquireExisting(t, Mem)
 }

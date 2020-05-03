@@ -1,7 +1,6 @@
 package fs
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 )
@@ -10,15 +9,15 @@ const lockTestPath = "test.lock"
 
 var lockTestMode = os.FileMode(0666)
 
-func testLockFile(fs FileSystem, t *testing.T) {
+func testLockFile(t *testing.T, fs FileSystem) {
 	_ = fs.Remove(lockTestPath)
-	lock, needRecovery, err := fs.CreateLockFile(lockTestPath, lockTestMode)
-	if lock == nil || needRecovery || err != nil {
-		t.Fatal(lock, err, needRecovery)
+	lock, acquiredExisting, err := fs.CreateLockFile(lockTestPath, lockTestMode)
+	if lock == nil || acquiredExisting || err != nil {
+		t.Fatal(lock, err, acquiredExisting)
 	}
-	lock2, needRecovery2, err2 := fs.CreateLockFile(lockTestPath, lockTestMode)
-	if lock2 != nil || needRecovery2 || err2 != os.ErrExist {
-		t.Fatal(lock2, needRecovery2, err2)
+	lock2, acquiredExisting2, err2 := fs.CreateLockFile(lockTestPath, lockTestMode)
+	if lock2 != nil || acquiredExisting2 || err2 != os.ErrExist {
+		t.Fatal(lock2, acquiredExisting2, err2)
 	}
 	if err := lock.Unlock(); err != nil {
 		t.Fatal(err)
@@ -28,13 +27,21 @@ func testLockFile(fs FileSystem, t *testing.T) {
 	}
 }
 
-func testLockFileAcquireExisting(fs FileSystem, t *testing.T) {
-	if err := ioutil.WriteFile(lockTestPath, []byte{}, lockTestMode); err != nil {
+func touchFile(fs FileSystem, path string) error {
+	f, err := fs.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(0666))
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+func testLockFileAcquireExisting(t *testing.T, fs FileSystem) {
+	if err := touchFile(fs, lockTestPath); err != nil {
 		t.Fatal(err)
 	}
-	lock, needRecovery, err := fs.CreateLockFile(lockTestPath, lockTestMode)
-	if lock == nil || !needRecovery || err != nil {
-		t.Fatal(lock, err, needRecovery)
+	lock, acquiredExisting, err := fs.CreateLockFile(lockTestPath, lockTestMode)
+	if lock == nil || !acquiredExisting || err != nil {
+		t.Fatal(lock, err, acquiredExisting)
 	}
 	if err := lock.Unlock(); err != nil {
 		t.Fatal(err)

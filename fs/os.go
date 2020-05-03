@@ -69,11 +69,8 @@ func (f *osfile) Slice(start int64, end int64) ([]byte, error) {
 }
 
 func (f *osfile) Close() error {
-	if f.data != nil {
-		if err := munmap(f.data); err != nil {
-			return nil
-		}
-		f.data = nil
+	if err := f.munmap(); err != nil {
+		return err
 	}
 	return f.File.Close()
 }
