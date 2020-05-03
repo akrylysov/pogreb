@@ -3,11 +3,13 @@ package pogreb
 import (
 	"bytes"
 	"testing"
+
+	"github.com/akrylysov/pogreb/internal/assert"
 )
 
 func TestIteratorEmpty(t *testing.T) {
 	db, err := createTestDB(nil)
-	assertNil(t, err)
+	assert.Nil(t, err)
 	it := db.Items()
 	for i := 0; i < 8; i++ {
 		_, _, err := it.Next()
@@ -15,12 +17,12 @@ func TestIteratorEmpty(t *testing.T) {
 			t.Fatalf("expected %v; got %v", ErrIterationDone, err)
 		}
 	}
-	assertNil(t, db.Close())
+	assert.Nil(t, db.Close())
 }
 
 func TestIterator(t *testing.T) {
 	db, err := createTestDB(nil)
-	assertNil(t, err)
+	assert.Nil(t, err)
 
 	items := map[byte]bool{}
 	var i byte
@@ -37,7 +39,7 @@ func TestIterator(t *testing.T) {
 		if err == ErrIterationDone {
 			break
 		}
-		assertNil(t, err)
+		assert.Nil(t, err)
 		if k, ok := items[key[0]]; !ok {
 			t.Fatalf("unknown key %v", k)
 		}
@@ -60,5 +62,5 @@ func TestIterator(t *testing.T) {
 		}
 	}
 
-	assertNil(t, db.Close())
+	assert.Nil(t, db.Close())
 }

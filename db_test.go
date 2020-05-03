@@ -8,39 +8,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/akrylysov/pogreb/fs"
+	"github.com/akrylysov/pogreb/internal/assert"
 )
-
-func assertEqual(t testing.TB, expected interface{}, actual interface{}) {
-	t.Helper()
-	if !reflect.DeepEqual(expected, actual) {
-		t.Fatalf("expected %+v; got %+v", expected, actual)
-	}
-}
-
-func assertNil(t testing.TB, actual interface{}) {
-	t.Helper()
-	if actual != nil && !reflect.ValueOf(actual).IsNil() {
-		t.Fatalf("expected nil; got %+v", actual)
-	}
-}
-
-func completeWithin(t testing.TB, waitDur time.Duration, cond func() bool) {
-	t.Helper()
-	start := time.Now()
-	for time.Since(start) < waitDur {
-		if cond() {
-			return
-		}
-		time.Sleep(time.Millisecond * 10)
-	}
-	t.Fatalf("expected to complete withing %v", waitDur)
-}
 
 func touchFile(path string) error {
 	f, err := os.Create(path)
@@ -101,59 +75,50 @@ func createTestDB(opts *Options) (*DB, error) {
 
 func TestEmpty(t *testing.T) {
 	db, err := createTestDB(nil)
-	assertNil(t, err)
-	assertNil(t, db.Close())
+	assert.Nil(t, err)
+	assert.Nil(t, db.Close())
 	db, err = Open("test.db", nil)
-	assertNil(t, err)
-	assertNil(t, db.Close())
+	assert.Nil(t, err)
+	assert.Nil(t, db.Close())
 }
 
 func TestSimple(t *testing.T) {
-	db, err := createTestDB(&Options{maxSegmentSize: 1024})
-	assertNil(t, err)
+	db, err := createTestDB(&Options{maxSegmentSize: 1024, BackgroundSyncInterval: -1})
+	assert.Nil(t, err)
 	var i byte
 	var n uint8 = 255
-	if db.Count() != 0 {
-		t.Fatal()
-	}
+	assert.Equal(t, uint32(0), db.Count())
 	for i = 0; i < n; i++ {
 		if has, err := db.Has([]byte{i}); has || err != nil {
 			t.Fatal(has, err)
 		}
 	}
-	if err := db.Delete([]byte{128}); err != nil {
-		t.Fatal(err)
-	}
-	if db.Count() != 0 {
-		t.Fatal()
-	}
+	assert.Nil(t, db.Delete([]byte{128}))
+	assert.Equal(t, uint32(0), db.Count())
 	for i = 0; i < n; i++ {
-		if err := db.Put([]byte{i}, []byte{i}); err != nil {
-			t.Fatal(err)
-		}
+		assert.Nil(t, db.Put([]byte{i}, []byte{i}))
 	}
-	if db.Count() != 255 {
-		t.Fatal()
-	}
-	if err := db.Delete([]byte{128}); err != nil {
-		t.Fatal(err)
-	}
-	if db.Count() != 254 {
-		t.Fatal()
-	}
-	if has, err := db.Has([]byte{128}); has || err != nil {
-		t.Fatal(has, err)
-	}
-	if err := db.Put([]byte{128}, []byte{128}); err != nil {
-		t.Fatal(err)
-	}
-	if db.Count() != 255 {
+	assert.Equal(t, uint32(255), db.Count())
+	assert.Equal(t, int64(n), db.Metrics().Puts.Value())
+	assert.Nil(t, db.Sync())
+
+	sz, err := db.FileSize()
+	assert.Nil(t, err)
+	if sz <= 0 {
 		t.Fatal()
 	}
 
+	assert.Nil(t, db.Delete([]byte{128}))
+	assert.Equal(t, uint32(254), db.Count())
+	if has, err := db.Has([]byte{128}); has || err != nil {
+		t.Fatal(has, err)
+	}
+	assert.Nil(t, db.Put([]byte{128}, []byte{128}))
+	assert.Equal(t, uint32(255), db.Count())
+
 	verifyKeysAndClose := func(valueOffset uint8) {
 		t.Helper()
-		assertEqual(t, uint32(255), db.Count())
+		assert.Equal(t, uint32(255), db.Count())
 		for i = 0; i < n; i++ {
 			if has, err := db.Has([]byte{i}); !has || err != nil {
 				t.Fatal(has, err)
@@ -165,116 +130,118 @@ func TestSimple(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertEqual(t, []byte{i + valueOffset}, v)
+			assert.Equal(t, []byte{i + valueOffset}, v)
 		}
-		assertNil(t, db.Close())
+		assert.Nil(t, db.Close())
 	}
 
 	verifyKeysAndClose(0)
 
 	// Simulate crash.
-	assertNil(t, touchFile(filepath.Join("test.db", lockName)))
-	assertNil(t, os.Remove(filepath.Join("test.db", segmentMetaName(0))))
-	assertNil(t, os.Remove(filepath.Join("test.db", indexMetaName)))
+	assert.Nil(t, touchFile(filepath.Join("test.db", lockName)))
+	assert.Nil(t, os.Remove(filepath.Join("test.db", segmentMetaName(0))))
+	assert.Nil(t, os.Remove(filepath.Join("test.db", indexMetaName)))
 
 	// Open and check again
 	db, err = Open("test.db", nil)
-	assertNil(t, err)
+	assert.Nil(t, err)
 	verifyKeysAndClose(0)
 
-	assertEqual(t, segmentMeta{PutRecords: 42, DeleteRecords: 1, DeletedBytes: 11}, *db.datalog.segments[0].meta)
-	assertEqual(t, segmentMeta{PutRecords: 42}, *db.datalog.segments[1].meta)
+	assert.Equal(t, segmentMeta{PutRecords: 42, DeleteRecords: 1, DeletedBytes: 11}, *db.datalog.segments[0].meta)
+	assert.Equal(t, segmentMeta{PutRecords: 42}, *db.datalog.segments[1].meta)
 
 	// Update all items
 	db, err = Open("test.db", nil)
-	assertNil(t, err)
+	assert.Nil(t, err)
 	for i = 0; i < n; i++ {
-		if err := db.Put([]byte{i}, []byte{i + 6}); err != nil {
-			t.Fatal(err)
-		}
+		assert.Nil(t, db.Put([]byte{i}, []byte{i + 6}))
 	}
 	verifyKeysAndClose(6)
 
 	// Delete all items
-	db, err = Open("test.db", nil)
-	assertNil(t, err)
+	db, err = Open("test.db", &Options{BackgroundSyncInterval: time.Millisecond})
+	assert.Nil(t, err)
 	for i = 0; i < n; i++ {
-		if err := db.Delete([]byte{i}); err != nil {
-			t.Fatal(err)
-		}
+		assert.Nil(t, db.Delete([]byte{i}))
 	}
 	for i = 0; i < n; i++ {
 		if has, err := db.Has([]byte{i}); has || err != nil {
 			t.Fatal(has, err)
 		}
 	}
-	if db.Count() != 0 {
-		t.Fatal()
-	}
-	assertNil(t, db.Close())
+	assert.Equal(t, uint32(0), db.Count())
+	assert.Nil(t, db.Close())
+}
+
+func TestLock(t *testing.T) {
+	db, err := createTestDB(nil)
+	assert.Nil(t, err)
+
+	// Opening already opened database returns an error.
+	db2, err2 := Open("test.db", nil)
+	assert.Nil(t, db2)
+	assert.Equal(t, errLocked, err2)
+
+	assert.Nil(t, db.Close())
 }
 
 func TestEmptyKey(t *testing.T) {
 	db, err := createTestDB(nil)
-	assertNil(t, err)
+	assert.Nil(t, err)
 	if err := db.Put([]byte{}, []byte{1}); err != nil {
 		t.Fatal(err)
 	}
 	v, err := db.Get([]byte{})
-	assertNil(t, err)
-	assertEqual(t, []byte{1}, v)
-	assertNil(t, db.Close())
+	assert.Nil(t, err)
+	assert.Equal(t, []byte{1}, v)
+	assert.Nil(t, db.Close())
 }
 
 func TestEmptyValue(t *testing.T) {
 	db, err := createTestDB(nil)
-	assertNil(t, err)
+	assert.Nil(t, err)
 	// Returns a nil value if key not found.
 	if v, err := db.Get([]byte{1}); err != nil || v != nil {
 		t.Fatal(err)
 	}
 	err = db.Put([]byte{1}, []byte{})
-	assertNil(t, err)
+	assert.Nil(t, err)
 	// Returns an empty slice if value is empty.
 	if v, err := db.Get([]byte{1}); err != nil || v == nil || len(v) != 0 {
 		t.Fatal(err)
 	}
-	assertNil(t, db.Close())
+	assert.Nil(t, db.Close())
 }
 
 func TestEmptyKeyValue(t *testing.T) {
 	db, err := createTestDB(nil)
-	assertNil(t, err)
-	if err := db.Put([]byte{}, []byte{}); err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err)
+	assert.Nil(t, db.Put([]byte{}, []byte{}))
 	v, err := db.Get([]byte{})
-	assertNil(t, err)
-	assertEqual(t, []byte{}, v)
-	assertNil(t, db.Close())
+	assert.Nil(t, err)
+	assert.Equal(t, []byte{}, v)
+	assert.Nil(t, db.Close())
 }
 
 func TestDataRecycle(t *testing.T) {
 	db, err := createTestDB(nil)
-	assertNil(t, err)
-	if err := db.Put([]byte{1}, []byte{8}); err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err)
+	assert.Nil(t, db.Put([]byte{1}, []byte{8}))
 	v, err := db.Get([]byte{1})
-	assertNil(t, err)
-	assertEqual(t, []byte{8}, v)
+	assert.Nil(t, err)
+	assert.Equal(t, []byte{8}, v)
 	err = db.Delete([]byte{1})
-	assertNil(t, err)
+	assert.Nil(t, err)
 	err = db.Put([]byte{1}, []byte{9})
-	assertNil(t, err)
-	assertEqual(t, []byte{8}, v)
-	assertNil(t, db.Close())
+	assert.Nil(t, err)
+	assert.Equal(t, []byte{8}, v)
+	assert.Nil(t, db.Close())
 }
 
 func TestClose(t *testing.T) {
 	db, err := createTestDB(nil)
-	assertNil(t, err)
-	assertNil(t, db.Close())
+	assert.Nil(t, err)
+	assert.Nil(t, db.Close())
 	if _, err := db.Get([]byte{1}); err == nil {
 		t.Fatal()
 	}
@@ -285,18 +252,81 @@ func TestClose(t *testing.T) {
 
 func TestCorruptedIndex(t *testing.T) {
 	db, err := createTestDB(nil)
-	assertNil(t, err)
-	assertNil(t, db.Close())
+	assert.Nil(t, err)
+	assert.Nil(t, db.Close())
 
 	f, err := os.OpenFile(filepath.Join("test.db", indexMetaName), os.O_WRONLY, 0)
-	assertNil(t, err)
+	assert.Nil(t, err)
 	_, err = f.WriteString("corrupted")
-	assertNil(t, err)
-	assertNil(t, f.Close())
+	assert.Nil(t, err)
+	assert.Nil(t, f.Close())
 
 	db, err = Open("test.db", nil)
-	assertNil(t, db)
-	assertEqual(t, errCorrupted, err)
+	assert.Nil(t, db)
+	assert.Equal(t, errCorrupted, err)
+}
+
+func TestFileError(t *testing.T) {
+	db, err := createTestDB(nil)
+	assert.Nil(t, err)
+	assert.Nil(t, db.Put(nil, nil))
+
+	errf := &errfile{}
+
+	testDB := func(t *testing.T) {
+		v, err := db.Get(nil)
+		assert.Nil(t, v)
+		assert.Equal(t, errfileError, err)
+
+		assert.Equal(t, errfileError, db.Put(nil, nil))
+		assert.Equal(t, errfileError, db.Delete(nil))
+
+		has, err := db.Has(nil)
+		assert.Equal(t, false, has)
+		assert.Equal(t, errfileError, err)
+
+		it := db.Items()
+		k, v, err := it.Next()
+		assert.Nil(t, k)
+		assert.Nil(t, v)
+		assert.Equal(t, errfileError, err)
+	}
+
+	t.Run("segment error", func(t *testing.T) {
+		oldf := db.datalog.segments[0].MmapFile
+		db.datalog.segments[0].MmapFile = errf
+
+		testDB(t)
+
+		assert.Equal(t, errfileError, db.Close())
+
+		db.datalog.segments[0].MmapFile = oldf
+	})
+
+	t.Run("index error", func(t *testing.T) {
+		oldf := db.index.main.MmapFile
+		db.index.main.MmapFile = errf
+
+		testDB(t)
+		assert.Equal(t, errfileError, db.index.close())
+
+		db.index.main.MmapFile = oldf
+	})
+
+	errfs := &errfs{}
+	oldfs := db.opts.FileSystem
+	db.opts.FileSystem = errfs
+	assert.Equal(t, errfileError, db.Close())
+	assert.Equal(t, errfileError, db.index.close())
+	db.opts.FileSystem = oldfs
+
+	assert.Nil(t, db.Close())
+}
+
+func TestFSError(t *testing.T) {
+	db, err := createTestDB(&Options{FileSystem: &errfs{}})
+	assert.Nil(t, db)
+	assert.Equal(t, errfileError, err)
 }
 
 func TestWordsDict(t *testing.T) {
@@ -306,32 +336,28 @@ func TestWordsDict(t *testing.T) {
 	}
 	defer fwords.Close()
 	db, err := createTestDB(&Options{FileSystem: fs.Mem})
-	assertNil(t, err)
+	assert.Nil(t, err)
 	scanner := bufio.NewScanner(fwords)
 	items := make(map[string]string)
 	for scanner.Scan() {
 		k := scanner.Text()
 		v := strings.ToUpper(k)
 		items[k] = v
-		if err := db.Put([]byte(k), []byte(v)); err != nil {
-			t.Fatal(err)
-		}
+		assert.Nil(t, db.Put([]byte(k), []byte(v)))
 	}
-	if err := scanner.Err(); err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, scanner.Err())
 	for k, v := range items {
 		v2, err := db.Get([]byte(k))
 		if string(v2) != v {
 			t.Fatalf("expected %v; got value=%v, err=%v for key %v", v, string(v2), err, k)
 		}
 	}
-	assertNil(t, db.Close())
+	assert.Nil(t, db.Close())
 }
 
 func BenchmarkPut(b *testing.B) {
 	db, err := createTestDB(nil)
-	assertNil(b, err)
+	assert.Nil(b, err)
 	b.ResetTimer()
 	k := []byte{1}
 	for i := 0; i < b.N; i++ {
@@ -339,12 +365,12 @@ func BenchmarkPut(b *testing.B) {
 			b.Fail()
 		}
 	}
-	assertNil(b, db.Close())
+	assert.Nil(b, db.Close())
 }
 
 func BenchmarkGet(b *testing.B) {
 	db, err := createTestDB(nil)
-	assertNil(b, err)
+	assert.Nil(b, err)
 	k := []byte{1}
 	if err := db.Put(k, k); err != nil {
 		b.Fail()
@@ -355,7 +381,7 @@ func BenchmarkGet(b *testing.B) {
 			b.Fatal()
 		}
 	}
-	assertNil(b, db.Close())
+	assert.Nil(b, db.Close())
 }
 
 func BenchmarkBucket_UnmarshalBinary(b *testing.B) {

@@ -16,7 +16,7 @@ var Mem = &memfs{files: map[string]*memfile{}}
 func (fs *memfs) OpenFile(name string, flag int, perm os.FileMode) (MmapFile, error) {
 	f := fs.files[name]
 	if f == nil || (flag&os.O_TRUNC) != 0 {
-		f = &memfile{}
+		f = &memfile{name: name}
 		fs.files[name] = f
 	} else if !f.closed {
 		return nil, os.ErrExist
@@ -28,11 +28,12 @@ func (fs *memfs) OpenFile(name string, flag int, perm os.FileMode) (MmapFile, er
 }
 
 func (fs *memfs) CreateLockFile(name string, perm os.FileMode) (LockFile, bool, error) {
-	f, err := fs.OpenFile(name, 0, perm)
+	_, exists := fs.files[name]
+	_, err := fs.OpenFile(name, 0, perm)
 	if err != nil {
 		return nil, false, err
 	}
-	return &memlockfile{f, name}, false, nil
+	return fs.files[name], exists, nil
 }
 
 func (fs *memfs) Stat(name string) (os.FileInfo, error) {
@@ -50,19 +51,8 @@ func (fs *memfs) Remove(name string) error {
 	return os.ErrNotExist
 }
 
-type memlockfile struct {
-	File
-	name string
-}
-
-func (f *memlockfile) Unlock() error {
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return Mem.Remove(f.name)
-}
-
 type memfile struct {
+	name   string
 	buf    []byte
 	size   int64
 	offset int64
@@ -75,6 +65,13 @@ func (m *memfile) Close() error {
 	}
 	m.closed = true
 	return nil
+}
+
+func (m *memfile) Unlock() error {
+	if err := m.Close(); err != nil {
+		return err
+	}
+	return Mem.Remove(m.name)
 }
 
 func (m *memfile) ReadAt(p []byte, off int64) (int, error) {
@@ -170,7 +167,7 @@ func (m *memfile) Truncate(size int64) error {
 }
 
 func (m *memfile) Name() string {
-	return ""
+	return m.name
 }
 
 func (m *memfile) Size() int64 {
