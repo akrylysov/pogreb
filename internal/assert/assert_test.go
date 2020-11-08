@@ -190,6 +190,7 @@ func TestPanic(t *testing.T) {
 
 func TestCompleteWithin(t *testing.T) {
 	var tc2Tries int
+	var tc4Tries int
 	testCases := []struct {
 		name           string
 		dur            time.Duration
@@ -228,7 +229,11 @@ func TestCompleteWithin(t *testing.T) {
 			name: "not completed: timeout",
 			dur:  time.Nanosecond,
 			cond: func() bool {
-				time.Sleep(pollingInterval * 2)
+				if tc4Tries == 0 {
+					tc4Tries++
+					time.Sleep(pollingInterval * 2)
+					return false
+				}
 				return true
 			},
 			expectedFailed: true,
