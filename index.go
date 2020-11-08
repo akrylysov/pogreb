@@ -98,6 +98,8 @@ func (idx *index) bucketIndex(hash uint32) uint32 {
 	return bidx
 }
 
+// TODO: deeply nested callbacks are hard to reason about.
+// TODO: rewrite the function to return an iterator if there is no performance implications.
 func (idx *index) forEachBucket(startBucketIdx uint32, cb func(bucketHandle) (bool, error)) error {
 	off := bucketOffset(startBucketIdx)
 	f := idx.main.MmapFile
