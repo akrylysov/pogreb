@@ -15,7 +15,7 @@ func TestDatalog(t *testing.T) {
 	assert.Equal(t, &segmentMeta{PutRecords: 1}, db.datalog.segments[0].meta)
 	assert.Nil(t, db.datalog.segments[1])
 
-	sm, err := db.datalog.segmentsByModification()
+	sm, err := db.datalog.segmentsBySequenceID()
 	assert.Nil(t, err)
 	assert.Equal(t, []*segment{db.datalog.segments[0]}, sm)
 
@@ -26,7 +26,7 @@ func TestDatalog(t *testing.T) {
 	assert.Equal(t, &segmentMeta{PutRecords: 1, Full: true}, db.datalog.segments[0].meta)
 	assert.Equal(t, &segmentMeta{PutRecords: 1}, db.datalog.segments[1].meta)
 
-	sm, err = db.datalog.segmentsByModification()
+	sm, err = db.datalog.segmentsBySequenceID()
 	assert.Nil(t, err)
 	assert.Equal(t, []*segment{db.datalog.segments[0], db.datalog.segments[1]}, sm)
 

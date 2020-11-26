@@ -9,7 +9,7 @@ import (
 )
 
 func TestRecovery(t *testing.T) {
-	dfPath := filepath.Join("test.db", segmentName(0))
+	segPath := filepath.Join("test.db", segmentName(0, 1))
 	testCases := []struct {
 		name string
 		fn   func() error
@@ -17,52 +17,52 @@ func TestRecovery(t *testing.T) {
 		{
 			name: "all zeroes",
 			fn: func() error {
-				return appendFile(dfPath, make([]byte, 128))
+				return appendFile(segPath, make([]byte, 128))
 			},
 		},
 		{
 			name: "partial kv size",
 			fn: func() error {
-				return appendFile(dfPath, []byte{1})
+				return appendFile(segPath, []byte{1})
 			},
 		},
 		{
 			name: "only kv size",
 			fn: func() error {
-				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0})
+				return appendFile(segPath, []byte{1, 0, 1, 0, 0, 0})
 			},
 		},
 		{
 			name: "kv size and key",
 			fn: func() error {
-				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1})
+				return appendFile(segPath, []byte{1, 0, 1, 0, 0, 0, 1})
 			},
 		},
 		{
 			name: "kv size, key, value",
 			fn: func() error {
-				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1})
+				return appendFile(segPath, []byte{1, 0, 1, 0, 0, 0, 1, 1})
 			},
 		},
 		{
 			name: "kv size, key, value, partial crc32",
 			fn: func() error {
-				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 40})
+				return appendFile(segPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 40})
 			},
 		},
 		{
 			name: "kv size, key, value, invalid crc32",
 			fn: func() error {
-				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 40, 19, 197, 0})
+				return appendFile(segPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 40, 19, 197, 0})
 			},
 		},
 		{
 			name: "corrupted and not corrupted record",
 			fn: func() error {
-				if err := appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 40, 19, 197, 0}); err != nil {
+				if err := appendFile(segPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 40, 19, 197, 0}); err != nil {
 					return err
 				}
-				return appendFile(dfPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12})
+				return appendFile(segPath, []byte{1, 0, 1, 0, 0, 0, 1, 1, 133, 13, 200, 12})
 			},
 		},
 	}
@@ -71,7 +71,7 @@ func TestRecovery(t *testing.T) {
 		t.Run(fmt.Sprintf("case %s", testCase.name), func(t *testing.T) {
 			db, err := createTestDB(nil)
 			assert.Nil(t, err)
-			// Fill file 0.
+			// Fill segment 0.
 			var i uint8
 			for i = 0; i < 128; i++ {
 				assert.Nil(t, db.Put([]byte{i}, []byte{i}))

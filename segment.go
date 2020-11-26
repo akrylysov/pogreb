@@ -21,13 +21,14 @@ const (
 // It consists of a sequence of binary-encoded variable length records.
 type segment struct {
 	*file
-	id      uint16
-	meta    *segmentMeta
-	modTime int64
+	id         uint16 // Physical segment identifier.
+	sequenceID uint64 // Logical monotonically increasing segment identifier.
+	name       string
+	meta       *segmentMeta
 }
 
-func segmentName(id uint16) string {
-	return fmt.Sprintf("%05d%s", id, segmentExt)
+func segmentName(id uint16, sequenceID uint64) string {
+	return fmt.Sprintf("%05d-%d%s", id, sequenceID, segmentExt)
 }
 
 type segmentMeta struct {
@@ -38,8 +39,8 @@ type segmentMeta struct {
 	DeletedBytes  uint32
 }
 
-func segmentMetaName(id uint16) string {
-	return fmt.Sprintf("%05d%s%s", id, segmentExt, metaExt)
+func segmentMetaName(id uint16, sequenceID uint64) string {
+	return segmentName(id, sequenceID) + metaExt
 }
 
 // Binary representation of a segment record:

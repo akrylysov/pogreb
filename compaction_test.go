@@ -72,8 +72,8 @@ func TestCompaction(t *testing.T) {
 		assert.Nil(t, db.datalog.segments[0])
 		assert.Equal(t, &segmentMeta{PutRecords: 1}, db.datalog.segments[1].meta)
 		// Compacted file was removed.
-		assert.Equal(t, false, fileExists(filepath.Join(db.opts.path, segmentName(0))))
-		assert.Equal(t, false, fileExists(filepath.Join(db.opts.path, segmentMetaName(0))))
+		assert.Equal(t, false, fileExists(filepath.Join(db.opts.path, segmentName(0, 1))))
+		assert.Equal(t, false, fileExists(filepath.Join(db.opts.path, segmentMetaName(0, 1))))
 	})
 
 	run("compact entire segment", func(t *testing.T, db *DB) {
