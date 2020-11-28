@@ -68,7 +68,7 @@ type recoveryIterator struct {
 }
 
 func newRecoveryIterator(dl *datalog) (*recoveryIterator, error) {
-	files, err := dl.segmentsByModification()
+	files, err := dl.segmentsBySequenceID()
 	if err != nil {
 		return nil, err
 	}

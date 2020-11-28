@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -18,10 +17,10 @@ const (
 
 // datalog is a write-ahead log.
 type datalog struct {
-	opts     *Options
-	curSeg   *segment
-	segments [maxSegments]*segment
-	modTime  int64
+	opts          *Options
+	curSeg        *segment
+	segments      [maxSegments]*segment
+	maxSequenceID uint64
 }
 
 func openDatalog(opts *Options) (*datalog, error) {
@@ -31,8 +30,7 @@ func openDatalog(opts *Options) (*datalog, error) {
 	}
 
 	dl := &datalog{
-		opts:    opts,
-		modTime: time.Now().UnixNano(),
+		opts: opts,
 	}
 
 	for _, file := range files {
@@ -41,13 +39,12 @@ func openDatalog(opts *Options) (*datalog, error) {
 		if ext != segmentExt {
 			continue
 		}
-		id, err := strconv.ParseInt(strings.TrimSuffix(name, ext), 10, 16)
+		seg, err := dl.openSegment(name)
 		if err != nil {
 			return nil, err
 		}
-		_, err = dl.openSegment(filepath.Join(opts.path, name), uint16(id))
-		if err != nil {
-			return nil, err
+		if seg.sequenceID > dl.maxSequenceID {
+			dl.maxSequenceID = seg.sequenceID
 		}
 	}
 
@@ -58,80 +55,110 @@ func openDatalog(opts *Options) (*datalog, error) {
 	return dl, nil
 }
 
-func (dl *datalog) openSegment(path string, id uint16) (*segment, error) {
-	f, err := openFile(dl.opts.FileSystem, path, false)
+func parseSegmentName(name string) (uint16, uint64, error) {
+	parts := strings.SplitN(strings.TrimSuffix(name, segmentExt), "-", 2)
+	id, err := strconv.ParseUint(parts[0], 10, 16)
+	if err != nil {
+		return 0, 0, err
+	}
+	var seqID uint64
+	if len(parts) == 2 {
+		seqID, err = strconv.ParseUint(parts[1], 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	return uint16(id), seqID, nil
+}
+
+func (dl *datalog) openSegment(name string) (*segment, error) {
+	id, seqID, err := parseSegmentName(name)
 	if err != nil {
 		return nil, err
 	}
-	var modTime int64
+	f, err := openFile(dl.opts.FileSystem, filepath.Join(dl.opts.path, name), false)
+	if err != nil {
+		return nil, err
+	}
 	meta := &segmentMeta{}
 	if !f.empty() {
-		metaPath := filepath.Join(dl.opts.path, segmentMetaName(id))
+		metaPath := filepath.Join(dl.opts.path, name+metaExt)
 		if err := readGobFile(dl.opts.FileSystem, metaPath, &meta); err != nil {
 			logger.Printf("error reading segment meta %d: %v", id, err)
 			// TODO: rebuild meta?
 		}
-		stat, err := f.MmapFile.Stat()
-		if err != nil {
-			return nil, err
-		}
-		modTime = stat.ModTime().UnixNano()
 	} else {
-		dl.modTime++
-		modTime = dl.modTime
+		dl.maxSequenceID++
+		seqID = dl.maxSequenceID
 	}
 
-	df := &segment{file: f, id: id, meta: meta, modTime: modTime}
+	df := &segment{
+		file:       f,
+		id:         id,
+		sequenceID: seqID,
+		name:       name,
+		meta:       meta,
+	}
 	dl.segments[id] = df
 	return df, nil
 }
 
-func (dl *datalog) nextWritableSegmentID() (uint16, error) {
-	for i, file := range dl.segments {
-		if file == nil || !file.meta.Full {
-			return uint16(i), nil
+func (dl *datalog) nextWritableSegmentID() (uint16, uint64, error) {
+	for id, seg := range dl.segments {
+		// Pick unfilled segment.
+		if seg != nil && !seg.meta.Full {
+			dl.maxSequenceID++
+			return uint16(id), dl.maxSequenceID, nil
 		}
 	}
-	return 0, fmt.Errorf("number of segments exceeds %d", maxSegments)
+	for id, seg := range dl.segments {
+		// Pick empty segment.
+		if seg == nil {
+			dl.maxSequenceID++
+			return uint16(id), dl.maxSequenceID, nil
+		}
+	}
+	return 0, 0, fmt.Errorf("number of segments exceeds %d", maxSegments)
 }
 
 func (dl *datalog) swapSegment() error {
-	id, err := dl.nextWritableSegmentID()
+	id, seqID, err := dl.nextWritableSegmentID()
 	if err != nil {
 		return err
 	}
-	var f *segment
+	var seg *segment
 	if dl.segments[id] != nil {
-		f = dl.segments[id]
+		seg = dl.segments[id]
 	} else {
-		name := segmentName(id)
-		f, err = dl.openSegment(filepath.Join(dl.opts.path, name), id)
+		name := segmentName(id, seqID)
+		seg, err = dl.openSegment(name)
 		if err != nil {
 			return err
 		}
 	}
-	dl.curSeg = f
+	dl.curSeg = seg
 	return nil
 }
 
-func (dl *datalog) removeSegment(f *segment) error {
-	dl.segments[f.id] = nil
+func (dl *datalog) removeSegment(seg *segment) error {
+	dl.segments[seg.id] = nil
 
-	if err := f.Close(); err != nil {
+	if err := seg.Close(); err != nil {
 		return err
 	}
 
-	// Remove segment.
-	filePath := filepath.Join(dl.opts.path, segmentName(f.id))
-	if err := os.Remove(filePath); err != nil {
+	// Remove segment meta from FS.
+	metaPath := filepath.Join(dl.opts.path, seg.name+segmentExt)
+	if err := dl.opts.FileSystem.Remove(metaPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
-	// Remove segment meta.
-	metaPath := filepath.Join(dl.opts.path, segmentMetaName(f.id))
-	if err := os.Remove(metaPath); err != nil && !os.IsNotExist(err) {
+	// Remove segment from FS.
+	filePath := filepath.Join(dl.opts.path, seg.name)
+	if err := dl.opts.FileSystem.Remove(filePath); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -208,23 +235,23 @@ func (dl *datalog) sync() error {
 }
 
 func (dl *datalog) close() error {
-	for id, f := range dl.segments {
-		if f == nil {
+	for _, seg := range dl.segments {
+		if seg == nil {
 			continue
 		}
-		if err := f.Close(); err != nil {
+		if err := seg.Close(); err != nil {
 			return err
 		}
-		metaPath := filepath.Join(dl.opts.path, segmentMetaName(uint16(id)))
-		if err := writeGobFile(dl.opts.FileSystem, metaPath, f.meta); err != nil {
+		metaPath := filepath.Join(dl.opts.path, seg.name+metaExt)
+		if err := writeGobFile(dl.opts.FileSystem, metaPath, seg.meta); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (dl *datalog) segmentsByModification() ([]*segment, error) {
-	// Sort segments in ascending order by last modified time.
+func (dl *datalog) segmentsBySequenceID() ([]*segment, error) {
+	// Sort segments in ascending order by sequence ID.
 	var segments []*segment
 
 	for _, f := range dl.segments {
@@ -235,7 +262,7 @@ func (dl *datalog) segmentsByModification() ([]*segment, error) {
 	}
 
 	sort.SliceStable(segments, func(i, j int) bool {
-		return segments[i].modTime < segments[j].modTime
+		return segments[i].sequenceID < segments[j].sequenceID
 	})
 
 	return segments, nil

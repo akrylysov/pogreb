@@ -87,7 +87,7 @@ func (db *DB) compact(f *segment) (CompactionResult, error) {
 }
 
 func (db *DB) pickForCompaction() ([]*segment, error) {
-	segments, err := db.datalog.segmentsByModification()
+	segments, err := db.datalog.segmentsBySequenceID()
 	if err != nil {
 		return nil, err
 	}
