@@ -1,7 +1,6 @@
 package pogreb
 
 import (
-	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -68,7 +67,7 @@ func TestRecovery(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		t.Run(fmt.Sprintf("case %s", testCase.name), func(t *testing.T) {
+		t.Run(testCase.name, func(t *testing.T) {
 			db, err := createTestDB(nil)
 			assert.Nil(t, err)
 			// Fill segment 0.
@@ -196,8 +195,7 @@ func TestRecoveryIterator(t *testing.T) {
 
 	listRecords := func() []record {
 		var records []record
-		it, err := newRecoveryIterator(db.datalog)
-		assert.Nil(t, err)
+		it := newRecoveryIterator(db.datalog.segmentsBySequenceID())
 		for {
 			rec, err := it.next()
 			if err == ErrIterationDone {

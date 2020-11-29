@@ -60,51 +60,47 @@ func removeRecoveryBackupFiles(path string) error {
 	return nil
 }
 
-// recoveryIterator iterates over records of all datalog files in insertion order.
-// Corrupted files are truncated to the last valid record.
+// recoveryIterator iterates over records of all datalog segments in insertion order.
+// Corrupted segments are truncated to the last valid record.
 type recoveryIterator struct {
-	files []*segment
-	dit   *segmentIterator
+	segments []*segment
+	segit    *segmentIterator
 }
 
-func newRecoveryIterator(dl *datalog) (*recoveryIterator, error) {
-	files, err := dl.segmentsBySequenceID()
-	if err != nil {
-		return nil, err
-	}
+func newRecoveryIterator(segments []*segment) *recoveryIterator {
 	return &recoveryIterator{
-		files: files,
-	}, nil
+		segments: segments,
+	}
 }
 
 func (it *recoveryIterator) next() (record, error) {
 	for {
-		if it.dit == nil {
-			if len(it.files) == 0 {
+		if it.segit == nil {
+			if len(it.segments) == 0 {
 				return record{}, ErrIterationDone
 			}
 			var err error
-			it.dit, err = newSegmentIterator(it.files[0])
+			it.segit, err = newSegmentIterator(it.segments[0])
 			if err != nil {
 				return record{}, err
 			}
-			it.files = it.files[1:]
+			it.segments = it.segments[1:]
 		}
-		rec, err := it.dit.next()
+		rec, err := it.segit.next()
 		if err == io.EOF || err == io.ErrUnexpectedEOF || err == errCorrupted {
 			// Truncate file to the last valid offset.
-			if err := it.dit.f.truncate(it.dit.offset); err != nil {
+			if err := it.segit.f.truncate(it.segit.offset); err != nil {
 				return record{}, err
 			}
-			fi, fierr := it.dit.f.Stat()
+			fi, fierr := it.segit.f.Stat()
 			if fierr != nil {
 				return record{}, fierr
 			}
-			logger.Printf("truncated data file %s to offset %d", fi.Name(), it.dit.offset)
+			logger.Printf("truncated segment %s to offset %d", fi.Name(), it.segit.offset)
 			err = ErrIterationDone
 		}
 		if err == ErrIterationDone {
-			it.dit = nil
+			it.segit = nil
 			continue
 		}
 		if err != nil {
@@ -116,12 +112,10 @@ func (it *recoveryIterator) next() (record, error) {
 
 func (db *DB) recover() error {
 	logger.Println("started recovery")
-
 	logger.Println("rebuilding index...")
-	it, err := newRecoveryIterator(db.datalog)
-	if err != nil {
-		return err
-	}
+
+	segments := db.datalog.segmentsBySequenceID()
+	it := newRecoveryIterator(segments)
 	for {
 		rec, err := it.next()
 		if err == ErrIterationDone {
@@ -146,11 +140,17 @@ func (db *DB) recover() error {
 			}
 			meta.PutRecords++
 		} else {
-			if err := db.del(h, rec.key); err != nil {
+			if err := db.del(h, rec.key, false); err != nil {
 				return err
 			}
 			meta.DeleteRecords++
+			meta.DeletedBytes += uint32(len(rec.data))
 		}
+	}
+
+	// Mark all segments except the newest as full.
+	for i := 0; i < len(segments)-1; i++ {
+		segments[i].meta.Full = true
 	}
 
 	if err := removeRecoveryBackupFiles(db.opts.path); err != nil {

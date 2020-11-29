@@ -86,11 +86,8 @@ func (db *DB) compact(f *segment) (CompactionResult, error) {
 	return cr, err
 }
 
-func (db *DB) pickForCompaction() ([]*segment, error) {
-	segments, err := db.datalog.segmentsBySequenceID()
-	if err != nil {
-		return nil, err
-	}
+func (db *DB) pickForCompaction() []*segment {
+	segments := db.datalog.segmentsBySequenceID()
 	var picked []*segment
 	for i := len(segments) - 1; i >= 0; i-- {
 		seg := segments[i]
@@ -107,12 +104,12 @@ func (db *DB) pickForCompaction() ([]*segment, error) {
 		if seg.meta.DeleteRecords > 0 {
 			// Delete records can be discarded only when older files contain no put records for the corresponding keys.
 			// All files older than the file eligible for compaction have to be compacted.
-			return append(segments[:i+1], picked...), nil
+			return append(segments[:i+1], picked...)
 		}
 
 		picked = append([]*segment{seg}, picked...)
 	}
-	return picked, nil
+	return picked
 }
 
 // Compact compacts the DB. Deleted and overwritten items are discarded.
@@ -128,11 +125,8 @@ func (db *DB) Compact() (CompactionResult, error) {
 	}()
 
 	db.mu.RLock()
-	segments, err := db.pickForCompaction()
+	segments := db.pickForCompaction()
 	db.mu.RUnlock()
-	if err != nil {
-		return cr, err
-	}
 
 	for _, f := range segments {
 		fcr, err := db.compact(f)

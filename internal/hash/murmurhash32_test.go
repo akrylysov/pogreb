@@ -44,7 +44,7 @@ func TestSum32WithSeed(t *testing.T) {
 		},
 	}
 	for i, tc := range testCases {
-		t.Run(fmt.Sprintf("case %d", i), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			assert.Equal(t, tc.out, Sum32WithSeed(tc.in, tc.seed))
 		})
 	}

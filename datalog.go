@@ -39,13 +39,18 @@ func openDatalog(opts *Options) (*datalog, error) {
 		if ext != segmentExt {
 			continue
 		}
-		seg, err := dl.openSegment(name)
+		id, seqID, err := parseSegmentName(name)
+		if err != nil {
+			return nil, err
+		}
+		seg, err := dl.openSegment(name, id, seqID)
 		if err != nil {
 			return nil, err
 		}
 		if seg.sequenceID > dl.maxSequenceID {
 			dl.maxSequenceID = seg.sequenceID
 		}
+		dl.segments[seg.id] = seg
 	}
 
 	if err := dl.swapSegment(); err != nil {
@@ -71,15 +76,12 @@ func parseSegmentName(name string) (uint16, uint64, error) {
 	return uint16(id), seqID, nil
 }
 
-func (dl *datalog) openSegment(name string) (*segment, error) {
-	id, seqID, err := parseSegmentName(name)
-	if err != nil {
-		return nil, err
-	}
+func (dl *datalog) openSegment(name string, id uint16, seqID uint64) (*segment, error) {
 	f, err := openFile(dl.opts.FileSystem, filepath.Join(dl.opts.path, name), false)
 	if err != nil {
 		return nil, err
 	}
+
 	meta := &segmentMeta{}
 	if !f.empty() {
 		metaPath := filepath.Join(dl.opts.path, name+metaExt)
@@ -87,30 +89,20 @@ func (dl *datalog) openSegment(name string) (*segment, error) {
 			logger.Printf("error reading segment meta %d: %v", id, err)
 			// TODO: rebuild meta?
 		}
-	} else {
-		dl.maxSequenceID++
-		seqID = dl.maxSequenceID
 	}
 
-	df := &segment{
+	seg := &segment{
 		file:       f,
 		id:         id,
 		sequenceID: seqID,
 		name:       name,
 		meta:       meta,
 	}
-	dl.segments[id] = df
-	return df, nil
+
+	return seg, nil
 }
 
 func (dl *datalog) nextWritableSegmentID() (uint16, uint64, error) {
-	for id, seg := range dl.segments {
-		// Pick unfilled segment.
-		if seg != nil && !seg.meta.Full {
-			dl.maxSequenceID++
-			return uint16(id), dl.maxSequenceID, nil
-		}
-	}
 	for id, seg := range dl.segments {
 		// Pick empty segment.
 		if seg == nil {
@@ -122,21 +114,29 @@ func (dl *datalog) nextWritableSegmentID() (uint16, uint64, error) {
 }
 
 func (dl *datalog) swapSegment() error {
+	// Pick unfilled segment.
+	for _, seg := range dl.segments {
+		if seg != nil && !seg.meta.Full {
+			dl.curSeg = seg
+			return nil
+		}
+	}
+
+	// Create new segment.
 	id, seqID, err := dl.nextWritableSegmentID()
 	if err != nil {
 		return err
 	}
-	var seg *segment
-	if dl.segments[id] != nil {
-		seg = dl.segments[id]
-	} else {
-		name := segmentName(id, seqID)
-		seg, err = dl.openSegment(name)
-		if err != nil {
-			return err
-		}
+
+	name := segmentName(id, seqID)
+	seg, err := dl.openSegment(name, id, seqID)
+	if err != nil {
+		return err
 	}
+
+	dl.segments[id] = seg
 	dl.curSeg = seg
+
 	return nil
 }
 
@@ -189,14 +189,13 @@ func (dl *datalog) readKey(sl slot) ([]byte, error) {
 	return key, nil*/
 }
 
-func (dl *datalog) trackOverwrite(sl slot) {
+func (dl *datalog) trackDel(sl slot) {
 	meta := dl.segments[sl.segmentID].meta
 	meta.DeletedKeys++
 	meta.DeletedBytes += encodedRecordSize(sl.kvSize())
 }
 
-func (dl *datalog) del(key []byte, sl slot) error {
-	dl.trackOverwrite(sl)
+func (dl *datalog) del(key []byte) error {
 	delRecord := encodeDeleteRecord(key)
 	_, _, err := dl.writeRecord(delRecord, recordTypeDelete)
 	if err != nil {
@@ -226,7 +225,7 @@ func (dl *datalog) writeRecord(data []byte, rt recordType) (uint16, uint32, erro
 	return dl.curSeg.id, uint32(off), nil
 }
 
-func (dl *datalog) writeKeyValue(key []byte, value []byte) (uint16, uint32, error) {
+func (dl *datalog) put(key []byte, value []byte) (uint16, uint32, error) {
 	return dl.writeRecord(encodePutRecord(key, value), recordTypePut)
 }
 
@@ -250,20 +249,20 @@ func (dl *datalog) close() error {
 	return nil
 }
 
-func (dl *datalog) segmentsBySequenceID() ([]*segment, error) {
-	// Sort segments in ascending order by sequence ID.
+// segmentsBySequenceID returns segments ordered from oldest to newest.
+func (dl *datalog) segmentsBySequenceID() []*segment {
 	var segments []*segment
 
-	for _, f := range dl.segments {
-		if f == nil {
+	for _, seg := range dl.segments {
+		if seg == nil {
 			continue
 		}
-		segments = append(segments, f)
+		segments = append(segments, seg)
 	}
 
 	sort.SliceStable(segments, func(i, j int) bool {
 		return segments[i].sequenceID < segments[j].sequenceID
 	})
 
-	return segments, nil
+	return segments
 }

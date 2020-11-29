@@ -67,7 +67,7 @@ func TestEqual(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		t.Run(fmt.Sprintf("case %d %+v", i, tc), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%d %+v", i, tc), func(t *testing.T) {
 			mock := &testing.T{}
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
@@ -129,7 +129,7 @@ func TestNil(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		t.Run(fmt.Sprintf("case %d %+v", i, tc.obj), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%d %+v", i, tc.obj), func(t *testing.T) {
 			mock := &testing.T{}
 			wg := &sync.WaitGroup{}
 			wg.Add(1)

@@ -82,7 +82,7 @@ func TestEmpty(t *testing.T) {
 	assert.Nil(t, db.Close())
 }
 
-func TestSimple(t *testing.T) {
+func TestFull(t *testing.T) {
 	db, err := createTestDB(&Options{maxSegmentSize: 1024, BackgroundSyncInterval: -1})
 	assert.Nil(t, err)
 	var i byte
@@ -135,6 +135,7 @@ func TestSimple(t *testing.T) {
 		assert.Nil(t, db.Close())
 	}
 
+	expectedSegMetas := db.datalog.segmentMetas()
 	verifyKeysAndClose(0)
 
 	// Simulate crash.
@@ -147,8 +148,7 @@ func TestSimple(t *testing.T) {
 	assert.Nil(t, err)
 	verifyKeysAndClose(0)
 
-	assert.Equal(t, segmentMeta{PutRecords: 42, DeleteRecords: 1, DeletedBytes: 11}, *db.datalog.segments[0].meta)
-	assert.Equal(t, segmentMeta{PutRecords: 42}, *db.datalog.segments[1].meta)
+	assert.Equal(t, expectedSegMetas, db.datalog.segmentMetas())
 
 	// Update all items
 	db, err = Open("test.db", nil)

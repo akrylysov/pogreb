@@ -251,7 +251,7 @@ func (db *DB) put(sl slot, key []byte) error {
 			return true, err
 		}
 		if bytes.Equal(key, slKey) {
-			db.datalog.trackOverwrite(cursl) // Overwriting existing key.
+			db.datalog.trackDel(cursl) // Overwriting existing key.
 			return true, nil
 		}
 		return false, nil
@@ -271,7 +271,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	fileID, offset, err := db.datalog.writeKeyValue(key, value)
+	fileID, offset, err := db.datalog.put(key, value)
 	if err != nil {
 		return err
 	}
@@ -294,7 +294,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 	return nil
 }
 
-func (db *DB) del(h uint32, key []byte) error {
+func (db *DB) del(h uint32, key []byte, writeWAL bool) error {
 	err := db.index.delete(h, func(sl slot) (b bool, e error) {
 		if uint16(len(key)) != sl.keySize {
 			return false, nil
@@ -304,7 +304,12 @@ func (db *DB) del(h uint32, key []byte) error {
 			return true, err
 		}
 		if bytes.Equal(key, slKey) {
-			return true, db.datalog.del(key, sl)
+			db.datalog.trackDel(sl)
+			var err error
+			if writeWAL {
+				err = db.datalog.del(key)
+			}
+			return true, err
 		}
 		return false, nil
 	})
@@ -317,7 +322,7 @@ func (db *DB) Delete(key []byte) error {
 	db.metrics.Dels.Add(1)
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	if err := db.del(h, key); err != nil {
+	if err := db.del(h, key, true); err != nil {
 		return err
 	}
 	if db.syncWrites {
