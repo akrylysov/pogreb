@@ -1,11 +1,17 @@
 # Changelog
 
+## [0.9.2] - 2021-01-01
+### Changed
+- Write-ahead log doesn't rely on wall-clock time anymore. It prevents potential race conditions during compaction and recovery.
+### Fixed
+- Fix recovery writing extra delete records.
+
 ## [0.9.1] - 2020-04-03
-## Changed
+### Changed
 - Improve Go 1.14 compatibility (remove "unsafe" usage).
 
 ## [0.9.0] - 2020-03-08
-## Changed
+### Changed
 - Replace the unstructured data file for storing key-value pairs with a write-ahead log.
 ### Added
 - In the event of a crash or a power loss the database is automatically recovered.
