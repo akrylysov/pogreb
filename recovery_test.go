@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/akrylysov/pogreb/fs"
 	"github.com/akrylysov/pogreb/internal/assert"
 )
 
@@ -79,7 +80,7 @@ func TestRecovery(t *testing.T) {
 			assert.Nil(t, db.Close())
 
 			// Simulate crash.
-			assert.Nil(t, touchFile(filepath.Join("test.db", lockName)))
+			assert.Nil(t, touchFile(fs.OS, filepath.Join("test.db", lockName)))
 
 			assert.Nil(t, testCase.fn())
 
@@ -111,7 +112,7 @@ func TestRecoveryDelete(t *testing.T) {
 	assert.Nil(t, db.Close())
 
 	// Simulate crash.
-	assert.Nil(t, touchFile(filepath.Join("test.db", lockName)))
+	assert.Nil(t, touchFile(fs.OS, filepath.Join("test.db", lockName)))
 
 	db, err = Open("test.db", nil)
 	assert.Nil(t, err)
@@ -175,7 +176,7 @@ func TestRecoveryCompaction(t *testing.T) {
 	assert.Nil(t, db.Close())
 
 	// Simulate crash.
-	assert.Nil(t, touchFile(filepath.Join("test.db", lockName)))
+	assert.Nil(t, touchFile(fs.OS, filepath.Join("test.db", lockName)))
 
 	db, err = Open("test.db", nil)
 	assert.Nil(t, err)

@@ -3,7 +3,6 @@ package pogreb
 import (
 	"bytes"
 	"context"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -54,9 +53,12 @@ type dbMeta struct {
 // The DB must be closed after use, by calling Close method.
 func Open(path string, opts *Options) (*DB, error) {
 	opts = opts.copyWithDefaults(path)
+
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return nil, err
 	}
+
+	// Try to acquire a file lock.
 	lock, acquiredExistingLock, err := createLockFile(opts)
 	if err != nil {
 		if err == os.ErrExist {
@@ -70,19 +72,26 @@ func Open(path string, opts *Options) (*DB, error) {
 			_ = clean()
 		}
 	}()
+
 	if acquiredExistingLock {
-		if err := backupNonsegmentFiles(path); err != nil {
+		// Lock file alredy existed, but the process managed to aquire it.
+		// It means the database wasn't closed properly.
+		// Start recovery process.
+		if err := backupNonsegmentFiles(opts.FileSystem, path); err != nil {
 			return nil, err
 		}
 	}
+
 	index, err := openIndex(opts)
 	if err != nil {
 		return nil, err
 	}
+
 	datalog, err := openDatalog(opts)
 	if err != nil {
 		return nil, err
 	}
+
 	db := &DB{
 		opts:       opts,
 		index:      index,
@@ -92,6 +101,7 @@ func Open(path string, opts *Options) (*DB, error) {
 		syncWrites: opts.BackgroundSyncInterval == -1,
 	}
 	if index.count() == 0 {
+		// The index is empty, make a new hash seed.
 		seed, err := hash.RandSeed()
 		if err != nil {
 			return nil, err
@@ -102,15 +112,17 @@ func Open(path string, opts *Options) (*DB, error) {
 			return nil, err
 		}
 	}
-	// Lock already exists - database wasn't closed properly.
+
 	if acquiredExistingLock {
 		if err := db.recover(); err != nil {
 			return nil, err
 		}
 	}
+
 	if db.opts.BackgroundSyncInterval > 0 || db.opts.BackgroundCompactionInterval > 0 {
 		db.startBackgroundWorker()
 	}
+
 	clean = nil
 	return db, nil
 }
@@ -141,6 +153,8 @@ func (db *DB) hash(data []byte) uint32 {
 	return hash.Sum32WithSeed(data, db.hashSeed)
 }
 
+// newNullableTicker is a wrapper around time.NewTicker that allows creating a nil ticker.
+// A nil ticker never ticks.
 func newNullableTicker(d time.Duration) (<-chan time.Time, func()) {
 	if d > 0 {
 		t := time.NewTicker(d)
@@ -159,6 +173,7 @@ func (db *DB) startBackgroundWorker() {
 
 		syncC, syncStop := newNullableTicker(db.opts.BackgroundSyncInterval)
 		defer syncStop()
+
 		compactC, compactStop := newNullableTicker(db.opts.BackgroundCompactionInterval)
 		defer compactStop()
 
@@ -271,14 +286,14 @@ func (db *DB) Put(key []byte, value []byte) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	fileID, offset, err := db.datalog.put(key, value)
+	segID, offset, err := db.datalog.put(key, value)
 	if err != nil {
 		return err
 	}
 
 	sl := slot{
 		hash:      h,
-		segmentID: fileID,
+		segmentID: segID,
 		keySize:   uint16(len(key)),
 		valueSize: uint32(len(value)),
 		offset:    offset,
@@ -385,7 +400,7 @@ func (db *DB) Metrics() Metrics {
 // FileSize returns the total size of the disk storage used by the DB.
 func (db *DB) FileSize() (int64, error) {
 	var size int64
-	files, err := ioutil.ReadDir(db.opts.path)
+	files, err := db.opts.FileSystem.ReadDir(db.opts.path)
 	if err != nil {
 		return 0, err
 	}

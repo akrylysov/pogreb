@@ -17,30 +17,6 @@ const (
 	errorLockViolation = 0x21
 )
 
-func mmap(f *os.File, fileSize int64, mmapSize int64) ([]byte, int64, error) {
-	size := fileSize
-	low, high := uint32(size), uint32(size>>32)
-	fmap, err := syscall.CreateFileMapping(syscall.Handle(f.Fd()), nil, syscall.PAGE_READONLY, high, low, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer syscall.CloseHandle(fmap)
-	ptr, err := syscall.MapViewOfFile(fmap, syscall.FILE_MAP_READ, 0, 0, uintptr(size))
-	if err != nil {
-		return nil, 0, err
-	}
-	data := (*[maxMmapSize]byte)(unsafe.Pointer(ptr))[:size]
-	return data, size, nil
-}
-
-func munmap(data []byte) error {
-	return syscall.UnmapViewOfFile(uintptr(unsafe.Pointer(&data[0])))
-}
-
-func madviceRandom(data []byte) error {
-	return nil
-}
-
 func lockfile(f *os.File) error {
 	var ol syscall.Overlapped
 
@@ -80,5 +56,5 @@ func createLockFile(name string, perm os.FileMode) (LockFile, bool, error) {
 		f.Close()
 		return nil, false, err
 	}
-	return &oslockfile{f, name}, acquiredExisting, nil
+	return &osLockFile{f, name}, acquiredExisting, nil
 }

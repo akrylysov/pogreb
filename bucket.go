@@ -2,13 +2,11 @@ package pogreb
 
 import (
 	"encoding/binary"
-
-	"github.com/akrylysov/pogreb/fs"
 )
 
 const (
-	slotsPerBucket = 31
 	bucketSize     = 512
+	slotsPerBucket = 31 // Maximum number of slots possible to fit in a 512-byte bucket.
 )
 
 // slot corresponds to a single item in the hash table.
@@ -17,7 +15,7 @@ type slot struct {
 	segmentID uint16
 	keySize   uint16
 	valueSize uint32
-	offset    uint32 // Segment offset.
+	offset    uint32 // Offset of the record in a segment.
 }
 
 func (sl slot) kvSize() uint32 {
@@ -33,7 +31,7 @@ type bucket struct {
 // bucketHandle is a bucket, plus its offset and the file it's written to.
 type bucketHandle struct {
 	bucket
-	file   fs.MmapFile
+	file   *file
 	offset int64
 }
 
@@ -69,6 +67,7 @@ func (b *bucket) UnmarshalBinary(data []byte) error {
 
 func (b *bucket) del(slotIdx int) {
 	i := slotIdx
+	// Shift slots.
 	for ; i < slotsPerBucket-1; i++ {
 		b.slots[i] = b.slots[i+1]
 	}

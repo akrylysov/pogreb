@@ -16,8 +16,8 @@ import (
 	"github.com/akrylysov/pogreb/internal/assert"
 )
 
-func touchFile(path string) error {
-	f, err := os.Create(path)
+func touchFile(fsys fs.FileSystem, path string) error {
+	f, err := fsys.OpenFile(path, os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
@@ -47,11 +47,12 @@ func align512(n uint32) uint32 {
 }
 
 func TestBucketSize(t *testing.T) {
-	if bucketSize != align512(uint32(binary.Size(bucket{}))) {
+	serializedSize := uint32(binary.Size(bucket{}))
+	if bucketSize != align512(serializedSize) {
 		t.Fatal("wrong bucketSize value", bucketSize)
 	}
-	if bucketSize-uint32(binary.Size(bucket{})) > 32 {
-		t.Fatal("bucket is wasting too much space", bucketSize)
+	if bucketSize-serializedSize > 32 {
+		t.Fatal("bucket is wasting too much space", bucketSize, serializedSize)
 	}
 }
 
@@ -70,6 +71,9 @@ func createTestDB(opts *Options) (*DB, error) {
 	for _, file := range files {
 		_ = os.Remove(filepath.Join(path, file.Name()))
 	}
+	if opts == nil {
+		opts = &Options{FileSystem: fs.OSMMap}
+	}
 	return Open(path, opts)
 }
 
@@ -82,8 +86,25 @@ func TestEmpty(t *testing.T) {
 	assert.Nil(t, db.Close())
 }
 
-func TestFull(t *testing.T) {
-	db, err := createTestDB(&Options{maxSegmentSize: 1024, BackgroundSyncInterval: -1})
+func TestFullMemFS(t *testing.T) {
+	testFull(t, fs.Mem)
+}
+
+func TestFullOSFS(t *testing.T) {
+	testFull(t, fs.OS)
+}
+
+func TestFullOSMMapFS(t *testing.T) {
+	testFull(t, fs.OSMMap)
+}
+
+func testFull(t *testing.T, fsys fs.FileSystem) {
+	opts := &Options{
+		BackgroundSyncInterval: -1,
+		FileSystem:             fsys,
+		maxSegmentSize:         1024,
+	}
+	db, err := createTestDB(opts)
 	assert.Nil(t, err)
 	var i byte
 	var n uint8 = 255
@@ -105,7 +126,7 @@ func TestFull(t *testing.T) {
 	sz, err := db.FileSize()
 	assert.Nil(t, err)
 	if sz <= 0 {
-		t.Fatal()
+		t.Fatal(sz)
 	}
 
 	assert.Nil(t, db.Delete([]byte{128}))
@@ -138,20 +159,25 @@ func TestFull(t *testing.T) {
 	expectedSegMetas := db.datalog.segmentMetas()
 	verifyKeysAndClose(0)
 
+	// Open and check again
+	db, err = Open("test.db", opts)
+	assert.Nil(t, err)
+	verifyKeysAndClose(0)
+
 	// Simulate crash.
-	assert.Nil(t, touchFile(filepath.Join("test.db", lockName)))
-	assert.Nil(t, os.Remove(filepath.Join("test.db", segmentMetaName(0, 1))))
-	assert.Nil(t, os.Remove(filepath.Join("test.db", indexMetaName)))
+	assert.Nil(t, touchFile(fsys, filepath.Join("test.db", lockName)))
+	assert.Nil(t, fsys.Remove(filepath.Join("test.db", segmentMetaName(0, 1))))
+	assert.Nil(t, fsys.Remove(filepath.Join("test.db", indexMetaName)))
 
 	// Open and check again
-	db, err = Open("test.db", nil)
+	db, err = Open("test.db", opts)
 	assert.Nil(t, err)
 	verifyKeysAndClose(0)
 
 	assert.Equal(t, expectedSegMetas, db.datalog.segmentMetas())
 
 	// Update all items
-	db, err = Open("test.db", nil)
+	db, err = Open("test.db", opts)
 	assert.Nil(t, err)
 	for i = 0; i < n; i++ {
 		assert.Nil(t, db.Put([]byte{i}, []byte{i + 6}))
@@ -293,24 +319,24 @@ func TestFileError(t *testing.T) {
 	}
 
 	t.Run("segment error", func(t *testing.T) {
-		oldf := db.datalog.segments[0].MmapFile
-		db.datalog.segments[0].MmapFile = errf
+		oldf := db.datalog.segments[0].File
+		db.datalog.segments[0].File = errf
 
 		testDB(t)
 
 		assert.Equal(t, errfileError, db.Close())
 
-		db.datalog.segments[0].MmapFile = oldf
+		db.datalog.segments[0].File = oldf
 	})
 
 	t.Run("index error", func(t *testing.T) {
-		oldf := db.index.main.MmapFile
-		db.index.main.MmapFile = errf
+		oldf := db.index.main.File
+		db.index.main.File = errf
 
 		testDB(t)
 		assert.Equal(t, errfileError, db.index.close())
 
-		db.index.main.MmapFile = oldf
+		db.index.main.File = oldf
 	})
 
 	errfs := &errfs{}

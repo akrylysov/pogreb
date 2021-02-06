@@ -3,20 +3,29 @@ package fs
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 )
 
-type memfs struct {
-	files map[string]*memfile
+type memFS struct {
+	files map[string]*memFile
 }
 
 // Mem is a file system backed by memory.
-var Mem = &memfs{files: map[string]*memfile{}}
+var Mem FileSystem = &memFS{files: map[string]*memFile{}}
 
-func (fs *memfs) OpenFile(name string, flag int, perm os.FileMode) (MmapFile, error) {
+func (fs *memFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	if flag&os.O_APPEND != 0 {
+		// memFS doesn't support opening files in append-only mode.
+		// The database doesn't currently use O_APPEND.
+		return nil, errAppendModeNotSupported
+	}
 	f := fs.files[name]
 	if f == nil || (flag&os.O_TRUNC) != 0 {
-		f = &memfile{name: name}
+		f = &memFile{
+			name: name,
+			perm: perm, // Perm is saved to return it in Mode, but don't do anything else with it yet.
+		}
 		fs.files[name] = f
 	} else if !f.closed {
 		return nil, os.ErrExist
@@ -27,7 +36,7 @@ func (fs *memfs) OpenFile(name string, flag int, perm os.FileMode) (MmapFile, er
 	return f, nil
 }
 
-func (fs *memfs) CreateLockFile(name string, perm os.FileMode) (LockFile, bool, error) {
+func (fs *memFS) CreateLockFile(name string, perm os.FileMode) (LockFile, bool, error) {
 	_, exists := fs.files[name]
 	_, err := fs.OpenFile(name, 0, perm)
 	if err != nil {
@@ -36,14 +45,14 @@ func (fs *memfs) CreateLockFile(name string, perm os.FileMode) (LockFile, bool, 
 	return fs.files[name], exists, nil
 }
 
-func (fs *memfs) Stat(name string) (os.FileInfo, error) {
+func (fs *memFS) Stat(name string) (os.FileInfo, error) {
 	if f, ok := fs.files[name]; ok {
 		return f, nil
 	}
 	return nil, os.ErrNotExist
 }
 
-func (fs *memfs) Remove(name string) error {
+func (fs *memFS) Remove(name string) error {
 	if _, ok := fs.files[name]; ok {
 		delete(fs.files, name)
 		return nil
@@ -51,152 +60,174 @@ func (fs *memfs) Remove(name string) error {
 	return os.ErrNotExist
 }
 
-type memfile struct {
+func (fs *memFS) Rename(oldpath, newpath string) error {
+	if f, ok := fs.files[oldpath]; ok {
+		delete(fs.files, oldpath)
+		fs.files[newpath] = f
+		return nil
+	}
+	return os.ErrNotExist
+}
+
+func (fs *memFS) ReadDir(dir string) ([]os.FileInfo, error) {
+	dir = filepath.Clean(dir)
+	var fis []os.FileInfo
+	for name, f := range fs.files {
+		if filepath.Dir(name) == dir {
+			fis = append(fis, f)
+		}
+	}
+	return fis, nil
+}
+
+type memFile struct {
 	name   string
+	perm   os.FileMode
 	buf    []byte
 	size   int64
 	offset int64
 	closed bool
 }
 
-func (m *memfile) Close() error {
-	if m.closed {
+func (f *memFile) Close() error {
+	if f.closed {
 		return os.ErrClosed
 	}
-	m.closed = true
+	f.closed = true
 	return nil
 }
 
-func (m *memfile) Unlock() error {
-	if err := m.Close(); err != nil {
+func (f *memFile) Unlock() error {
+	if err := f.Close(); err != nil {
 		return err
 	}
-	return Mem.Remove(m.name)
+	return Mem.Remove(f.name)
 }
 
-func (m *memfile) ReadAt(p []byte, off int64) (int, error) {
-	if m.closed {
+func (f *memFile) ReadAt(p []byte, off int64) (int, error) {
+	if f.closed {
 		return 0, os.ErrClosed
 	}
-	if off >= m.size {
+	if off >= f.size {
 		return 0, io.EOF
 	}
-	n := len(p)
-	if int64(n) > m.size-off {
-		copy(p, m.buf[off:])
-		return int(m.size - off), io.EOF
+	n := int64(len(p))
+	if n > f.size-off {
+		copy(p, f.buf[off:])
+		return int(f.size - off), nil
 	}
-	copy(p, m.buf[off:off+int64(n)])
-	return n, nil
+	copy(p, f.buf[off:off+n])
+	return int(n), nil
 }
 
-func (m *memfile) Read(p []byte) (int, error) {
-	n, err := m.ReadAt(p, m.offset)
+func (f *memFile) Read(p []byte) (int, error) {
+	n, err := f.ReadAt(p, f.offset)
 	if err != nil {
 		return n, err
 	}
-	m.offset += int64(n)
+	f.offset += int64(n)
 	return n, err
 }
 
-func (m *memfile) WriteAt(p []byte, off int64) (int, error) {
-	if m.closed {
+func (f *memFile) WriteAt(p []byte, off int64) (int, error) {
+	if f.closed {
 		return 0, os.ErrClosed
 	}
-	n := len(p)
-	if off == m.size {
-		m.buf = append(m.buf, p...)
-		m.size += int64(n)
-	} else if off+int64(n) > m.size {
-		panic("trying to write past EOF - undefined behavior")
-	} else {
-		copy(m.buf[off:off+int64(n)], p)
+	n := int64(len(p))
+	if off+n > f.size {
+		f.truncate(off + n)
 	}
-	return n, nil
+	copy(f.buf[off:off+n], p)
+	return int(n), nil
 }
 
-func (m *memfile) Write(p []byte) (int, error) {
-	n, err := m.WriteAt(p, m.offset)
+func (f *memFile) Write(p []byte) (int, error) {
+	n, err := f.WriteAt(p, f.offset)
 	if err != nil {
 		return n, err
 	}
-	m.offset += int64(n)
+	f.offset += int64(n)
 	return n, err
 }
 
-func (m *memfile) Seek(offset int64, whence int) (int64, error) {
-	if m.closed {
+func (f *memFile) Seek(offset int64, whence int) (int64, error) {
+	if f.closed {
 		return 0, os.ErrClosed
 	}
-	if whence == io.SeekEnd {
-		m.offset = m.size + offset
-	} else if whence == io.SeekStart {
-		m.offset = offset
-	} else if whence == io.SeekCurrent {
-		m.offset += offset
+	switch whence {
+	case io.SeekEnd:
+		f.offset = f.size + offset
+	case io.SeekStart:
+		f.offset = offset
+	case io.SeekCurrent:
+		f.offset += offset
 	}
-	return m.offset, nil
+	return f.offset, nil
 }
 
-func (m *memfile) Stat() (os.FileInfo, error) {
-	if m.closed {
-		return m, os.ErrClosed
+func (f *memFile) Stat() (os.FileInfo, error) {
+	if f.closed {
+		return f, os.ErrClosed
 	}
-	return m, nil
+	return f, nil
 }
 
-func (m *memfile) Sync() error {
-	if m.closed {
+func (f *memFile) Sync() error {
+	if f.closed {
 		return os.ErrClosed
 	}
 	return nil
 }
 
-func (m *memfile) Truncate(size int64) error {
-	if m.closed {
+func (f *memFile) truncate(size int64) {
+	if size > f.size {
+		diff := int(size - f.size)
+		f.buf = append(f.buf, make([]byte, diff)...)
+	} else {
+		f.buf = f.buf[:size]
+	}
+	f.size = size
+}
+
+func (f *memFile) Truncate(size int64) error {
+	if f.closed {
 		return os.ErrClosed
 	}
-	if size > m.size {
-		diff := int(size - m.size)
-		m.buf = append(m.buf, make([]byte, diff)...)
-	} else {
-		m.buf = m.buf[:m.size]
-	}
-	m.size = size
+	f.truncate(size)
 	return nil
 }
 
-func (m *memfile) Name() string {
-	return m.name
+func (f *memFile) Name() string {
+	_, name := filepath.Split(f.name)
+	return name
 }
 
-func (m *memfile) Size() int64 {
-	return m.size
+func (f *memFile) Size() int64 {
+	return f.size
 }
 
-func (m *memfile) Mode() os.FileMode {
-	return os.FileMode(0)
+func (f *memFile) Mode() os.FileMode {
+	return f.perm
 }
 
-func (m *memfile) ModTime() time.Time {
+func (f *memFile) ModTime() time.Time {
 	return time.Now()
 }
 
-func (m *memfile) IsDir() bool {
+func (f *memFile) IsDir() bool {
 	return false
 }
 
-func (m *memfile) Sys() interface{} {
+func (f *memFile) Sys() interface{} {
 	return nil
 }
 
-func (m *memfile) Slice(start int64, end int64) ([]byte, error) {
-	if m.closed {
+func (f *memFile) Slice(start int64, end int64) ([]byte, error) {
+	if f.closed {
 		return nil, os.ErrClosed
 	}
-	return m.buf[start:end], nil
-}
-
-func (m *memfile) Mmap(size int64) error {
-	return nil
+	if end > f.size {
+		return nil, io.EOF
+	}
+	return f.buf[start:end], nil
 }

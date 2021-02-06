@@ -102,7 +102,7 @@ func (idx *index) bucketIndex(hash uint32) uint32 {
 // TODO: rewrite the function to return an iterator if there is no performance implications.
 func (idx *index) forEachBucket(startBucketIdx uint32, cb func(bucketHandle) (bool, error)) error {
 	off := bucketOffset(startBucketIdx)
-	f := idx.main.MmapFile
+	f := idx.main
 	for {
 		b := bucketHandle{file: f, offset: off}
 		if err := b.read(); err != nil {
@@ -115,7 +115,7 @@ func (idx *index) forEachBucket(startBucketIdx uint32, cb func(bucketHandle) (bo
 			return nil
 		}
 		off = b.next
-		f = idx.overflow.MmapFile
+		f = idx.overflow
 	}
 }
 
