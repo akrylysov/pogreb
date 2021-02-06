@@ -20,6 +20,9 @@ type Options struct {
 	// Setting the value to 0 disables the automatic background compaction.
 	BackgroundCompactionInterval time.Duration
 
+	// FileSystem sets the file system implementation.
+	//
+	// Default: fs.OSMMap.
 	FileSystem fs.FileSystem
 
 	path                       string
