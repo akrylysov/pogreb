@@ -12,7 +12,7 @@ import (
 )
 
 func fileExists(name string) bool {
-	_, err := os.Stat(name)
+	_, err := testFS.Stat(name)
 	return !os.IsNotExist(err)
 }
 

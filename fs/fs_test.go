@@ -301,7 +301,7 @@ func testFS(t *testing.T, fs FileSystem) {
 			t.Fatal()
 		}
 
-		if _, err := f.Seek(io.SeekStart, 1); err == nil {
+		if _, err := f.Seek(1, io.SeekStart); err == nil {
 			t.Fatal()
 		}
 	})
