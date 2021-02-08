@@ -30,9 +30,8 @@ func testLockFile(t *testing.T, fs FileSystem) {
 	err = lock.Unlock()
 	assert.Nil(t, err)
 
-	if _, err := fs.Stat(lockTestPath); err == nil {
-		t.Fatal()
-	}
+	_, err = fs.Stat(lockTestPath)
+	assert.NotNil(t, err)
 }
 
 func touchFile(fs FileSystem, path string) error {
@@ -55,13 +54,12 @@ func testLockFileAcquireExisting(t *testing.T, fs FileSystem) {
 	err = lock.Unlock()
 	assert.Nil(t, err)
 
-	if _, err := fs.Stat(lockTestPath); err == nil {
-		t.Fatal()
-	}
+	_, err = fs.Stat(lockTestPath)
+	assert.NotNil(t, err)
 }
 
-func testFS(t *testing.T, fs FileSystem) {
-	f, err := fs.OpenFile("test", os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(0666))
+func testFS(t *testing.T, fsys FileSystem) {
+	f, err := fsys.OpenFile("test", os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(0666))
 	assert.Nil(t, err)
 
 	buf := make([]byte, 10)
@@ -156,6 +154,10 @@ func testFS(t *testing.T, fs FileSystem) {
 		_ = fi.Mode()
 		_ = fi.ModTime()
 		_ = fi.Sys()
+
+		// File doesn't exist.
+		_, err = fsys.Stat("foobar")
+		assert.NotNil(t, err)
 	})
 
 	t.Run("ReadAt", func(t *testing.T) {
@@ -227,7 +229,7 @@ func testFS(t *testing.T, fs FileSystem) {
 	t.Run("Close and Open again", func(t *testing.T) {
 		assert.Nil(t, f.Close())
 
-		f, err = fs.OpenFile("test", os.O_RDWR, os.FileMode(0666))
+		f, err = fsys.OpenFile("test", os.O_RDWR, os.FileMode(0666))
 		assert.Nil(t, err)
 
 		b, err := f.Slice(1, 10)
@@ -297,12 +299,29 @@ func testFS(t *testing.T, fs FileSystem) {
 	t.Run("Close", func(t *testing.T) {
 		assert.Nil(t, f.Close())
 
-		if err := f.Close(); err == nil {
-			t.Fatal()
-		}
+		err := f.Close()
+		assert.NotNil(t, err)
 
-		if _, err := f.Seek(1, io.SeekStart); err == nil {
-			t.Fatal()
-		}
+		_, err = f.Seek(1, io.SeekStart)
+		assert.NotNil(t, err)
+	})
+
+	t.Run("Rename", func(t *testing.T) {
+		err := fsys.Rename("foobar", "baz")
+		assert.NotNil(t, err)
+
+		assert.Nil(t, fsys.Rename("test", "test2"))
+		fi, err := fsys.Stat("test2")
+		assert.Nil(t, err)
+		assert.Equal(t, int64(0), fi.Size())
+		assert.Equal(t, "test2", fi.Name())
+	})
+
+	t.Run("Remove", func(t *testing.T) {
+		err := fsys.Remove("test2")
+		assert.Nil(t, err)
+
+		_, err = fsys.Stat("test2")
+		assert.NotNil(t, err)
 	})
 }

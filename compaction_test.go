@@ -24,9 +24,7 @@ func countSegments(t *testing.T, db *DB) int {
 	for _, f := range db.datalog.segments {
 		if f != nil {
 			c++
-			if f.meta == nil {
-				t.Fatal()
-			}
+			assert.NotNil(t, f.meta)
 		}
 	}
 	return c

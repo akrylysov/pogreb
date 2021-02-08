@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 		SetLogger(log.New(ioutil.Discard, "", 0))
 	}
 	// Run tests against all file systems.
-	for _, fsys := range []fs.FileSystem{fs.OSMMap, fs.OS, fs.Mem} {
+	for _, fsys := range []fs.FileSystem{fs.Mem, fs.OSMMap, fs.OS} {
 		testFS = fsys
 		if testing.Verbose() {
 			fmt.Printf("=== SET\tFS=%T\n", fsys)
@@ -286,12 +286,9 @@ func TestClose(t *testing.T) {
 	db, err := createTestDB(nil)
 	assert.Nil(t, err)
 	assert.Nil(t, db.Close())
-	if _, err := db.Get([]byte{1}); err == nil {
-		t.Fatal()
-	}
-	if err := db.Close(); err == nil {
-		t.Fatal()
-	}
+	_, err = db.Get([]byte{1})
+	assert.NotNil(t, err)
+	assert.NotNil(t, db.Close())
 }
 
 func TestCorruptedIndex(t *testing.T) {

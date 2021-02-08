@@ -37,6 +37,15 @@ func Nil(t testing.TB, obj interface{}) {
 	}
 }
 
+// NotNil fails the test when obj is nil.
+func NotNil(t testing.TB, obj interface{}) {
+	val := reflect.ValueOf(obj)
+	if obj == nil || (nillableKinds[val.Kind()] && val.IsNil()) {
+		t.Helper()
+		t.Fatalf("expected not nil; got %+v", obj)
+	}
+}
+
 const pollingInterval = time.Millisecond * 10 // How often CompleteWithin polls the cond function.
 
 // CompleteWithin fails the test when cond doesn't succeed within waitDur.

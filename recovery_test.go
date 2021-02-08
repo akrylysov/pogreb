@@ -211,9 +211,7 @@ func TestRecoveryIterator(t *testing.T) {
 		return records
 	}
 
-	if len(listRecords()) != 0 {
-		t.Fatal()
-	}
+	assert.Equal(t, 0, len(listRecords()))
 
 	if err := db.Put([]byte{1}, []byte{1}); err != nil {
 		t.Fatal(err)

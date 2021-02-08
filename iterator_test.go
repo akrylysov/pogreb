@@ -28,9 +28,8 @@ func TestIterator(t *testing.T) {
 	var i byte
 	for i = 0; i < 255; i++ {
 		items[i] = false
-		if err := db.Put([]byte{i}, []byte{i}); err != nil {
-			t.Fatal()
-		}
+		err := db.Put([]byte{i}, []byte{i})
+		assert.Nil(t, err)
 	}
 
 	it := db.Items()

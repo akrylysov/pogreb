@@ -64,6 +64,7 @@ func (fs *memFS) Rename(oldpath, newpath string) error {
 	if f, ok := fs.files[oldpath]; ok {
 		delete(fs.files, oldpath)
 		fs.files[newpath] = f
+		f.name = newpath
 		return nil
 	}
 	return os.ErrNotExist

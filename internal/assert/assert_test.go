@@ -91,55 +91,63 @@ func TestNil(t *testing.T) {
 	var nilSlice []string
 
 	testCases := []struct {
-		obj            interface{}
-		expectedFailed bool
+		obj   interface{}
+		isNil bool
 	}{
 		{
-			obj:            nil,
-			expectedFailed: false,
+			obj:   nil,
+			isNil: true,
 		},
 		{
-			obj:            nilIntPtr,
-			expectedFailed: false,
+			obj:   nilIntPtr,
+			isNil: true,
 		},
 		{
-			obj:            nilStructPtr,
-			expectedFailed: false,
+			obj:   nilStructPtr,
+			isNil: true,
 		},
 		{
-			obj:            nilSlice,
-			expectedFailed: false,
+			obj:   nilSlice,
+			isNil: true,
 		},
 		{
-			obj:            1,
-			expectedFailed: true,
+			obj:   1,
+			isNil: false,
 		},
 		{
-			obj:            "1",
-			expectedFailed: true,
+			obj:   "1",
+			isNil: false,
 		},
 		{
-			obj:            []string{},
-			expectedFailed: true,
+			obj:   []string{},
+			isNil: false,
 		},
 		{
-			obj:            [2]int{1, 1},
-			expectedFailed: true,
+			obj:   [2]int{1, 1},
+			isNil: false,
 		},
 	}
 
 	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("%d %+v", i, tc.obj), func(t *testing.T) {
-			mock := &testing.T{}
+			mockNil := &testing.T{}
+			mockNotNil := &testing.T{}
 			wg := &sync.WaitGroup{}
-			wg.Add(1)
+			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				Nil(mock, tc.obj)
+				Nil(mockNil, tc.obj)
+			}()
+			go func() {
+				defer wg.Done()
+				NotNil(mockNotNil, tc.obj)
 			}()
 			wg.Wait()
-			if tc.expectedFailed != mock.Failed() {
-				t.Fatalf("expected to fail: %t; failed: %t", tc.expectedFailed, mock.Failed())
+			if tc.isNil == mockNil.Failed() {
+				t.Fatalf("Nil expected to fail: %t; failed: %t", !tc.isNil, mockNil.Failed())
+			}
+			if !tc.isNil == mockNotNil.Failed() {
+				t.Fatalf("NotNil expected to fail: %t; failed: %t", tc.isNil, mockNotNil.Failed())
 			}
 		})
 	}
