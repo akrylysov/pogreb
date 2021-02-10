@@ -2,19 +2,19 @@ package pogreb
 
 import (
 	"io"
-	"io/ioutil"
-	"os"
 	"path/filepath"
+
+	"github.com/akrylysov/pogreb/fs"
 )
 
 const (
 	recoveryBackupExt = ".bac"
 )
 
-func backupNonsegmentFiles(path string) error {
+func backupNonsegmentFiles(fsys fs.FileSystem, path string) error {
 	logger.Println("moving non-segment files...")
 
-	files, err := ioutil.ReadDir(path)
+	files, err := fsys.ReadDir(path)
 	if err != nil {
 		return err
 	}
@@ -27,7 +27,7 @@ func backupNonsegmentFiles(path string) error {
 		}
 		src := filepath.Join(path, name)
 		dst := src + recoveryBackupExt
-		if err := os.Rename(src, dst); err != nil {
+		if err := fsys.Rename(src, dst); err != nil {
 			return err
 		}
 		logger.Printf("moved %s to %s", src, dst)
@@ -36,10 +36,10 @@ func backupNonsegmentFiles(path string) error {
 	return nil
 }
 
-func removeRecoveryBackupFiles(path string) error {
+func removeRecoveryBackupFiles(fsys fs.FileSystem, path string) error {
 	logger.Println("removing recovery backup files...")
 
-	files, err := ioutil.ReadDir(path)
+	files, err := fsys.ReadDir(path)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func removeRecoveryBackupFiles(path string) error {
 			continue
 		}
 		src := filepath.Join(path, name)
-		if err := os.Remove(src); err != nil {
+		if err := fsys.Remove(src); err != nil {
 			return err
 		}
 		logger.Printf("removed %s", src)
@@ -89,7 +89,7 @@ func (it *recoveryIterator) next() (record, error) {
 		rec, err := it.segit.next()
 		if err == io.EOF || err == io.ErrUnexpectedEOF || err == errCorrupted {
 			// Truncate file to the last valid offset.
-			if err := it.segit.f.truncate(it.segit.offset); err != nil {
+			if err := it.segit.f.Truncate(int64(it.segit.offset)); err != nil {
 				return record{}, err
 			}
 			fi, fierr := it.segit.f.Stat()
@@ -153,7 +153,7 @@ func (db *DB) recover() error {
 		segments[i].meta.Full = true
 	}
 
-	if err := removeRecoveryBackupFiles(db.opts.path); err != nil {
+	if err := removeRecoveryBackupFiles(db.opts.FileSystem, db.opts.path); err != nil {
 		logger.Printf("error removing recovery backups files: %v", err)
 	}
 

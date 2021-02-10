@@ -20,6 +20,9 @@ type Options struct {
 	// Setting the value to 0 disables the automatic background compaction.
 	BackgroundCompactionInterval time.Duration
 
+	// FileSystem sets the file system implementation.
+	//
+	// Default: fs.OSMMap.
 	FileSystem fs.FileSystem
 
 	path                       string
@@ -34,7 +37,7 @@ func (src *Options) copyWithDefaults(path string) *Options {
 		opts = *src
 	}
 	if opts.FileSystem == nil {
-		opts.FileSystem = fs.OS
+		opts.FileSystem = fs.OSMMap
 	}
 	if opts.maxSegmentSize == 0 {
 		opts.maxSegmentSize = math.MaxUint32

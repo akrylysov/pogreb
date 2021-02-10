@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -16,8 +17,36 @@ import (
 	"github.com/akrylysov/pogreb/internal/assert"
 )
 
-func touchFile(path string) error {
-	f, err := os.Create(path)
+const (
+	testDBName = "test.db"
+)
+
+var (
+	// File system used for all tests.
+	testFS fs.FileSystem
+)
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if !testing.Verbose() {
+		SetLogger(log.New(ioutil.Discard, "", 0))
+	}
+	// Run tests against all file systems.
+	for _, fsys := range []fs.FileSystem{fs.Mem, fs.OSMMap, fs.OS} {
+		testFS = fsys
+		if testing.Verbose() {
+			fmt.Printf("=== SET\tFS=%T\n", fsys)
+		}
+		if exitCode := m.Run(); exitCode != 0 {
+			fmt.Printf("DEBUG\tFS=%T\n", fsys)
+			os.Exit(exitCode)
+		}
+	}
+	os.Exit(0)
+}
+
+func touchFile(fsys fs.FileSystem, path string) error {
+	f, err := fsys.OpenFile(path, os.O_CREATE|os.O_TRUNC, os.FileMode(0640))
 	if err != nil {
 		return err
 	}
@@ -25,21 +54,16 @@ func touchFile(path string) error {
 }
 
 func appendFile(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0640)
+	f, err := testFS.OpenFile(path, os.O_RDWR, os.FileMode(0640))
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	if _, err = f.Seek(0, os.SEEK_END); err != nil {
+		return err
+	}
 	_, err = f.Write(data)
 	return err
-}
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	if !testing.Verbose() {
-		SetLogger(log.New(ioutil.Discard, "", 0))
-	}
-	os.Exit(m.Run())
 }
 
 func align512(n uint32) uint32 {
@@ -47,11 +71,12 @@ func align512(n uint32) uint32 {
 }
 
 func TestBucketSize(t *testing.T) {
-	if bucketSize != align512(uint32(binary.Size(bucket{}))) {
+	serializedSize := uint32(binary.Size(bucket{}))
+	if bucketSize != align512(serializedSize) {
 		t.Fatal("wrong bucketSize value", bucketSize)
 	}
-	if bucketSize-uint32(binary.Size(bucket{})) > 32 {
-		t.Fatal("bucket is wasting too much space", bucketSize)
+	if bucketSize-serializedSize > 32 {
+		t.Fatal("bucket is wasting too much space", bucketSize, serializedSize)
 	}
 }
 
@@ -62,28 +87,41 @@ func TestHeaderSize(t *testing.T) {
 }
 
 func createTestDB(opts *Options) (*DB, error) {
-	path := "test.db"
-	files, err := ioutil.ReadDir(path)
+	if opts == nil {
+		opts = &Options{FileSystem: testFS}
+	} else {
+		if opts.FileSystem == nil {
+			opts.FileSystem = testFS
+		}
+	}
+	path := testDBName
+	files, err := testFS.ReadDir(path)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	for _, file := range files {
-		_ = os.Remove(filepath.Join(path, file.Name()))
+		_ = testFS.Remove(filepath.Join(path, file.Name()))
 	}
 	return Open(path, opts)
 }
 
 func TestEmpty(t *testing.T) {
-	db, err := createTestDB(nil)
+	opts := &Options{FileSystem: testFS}
+	db, err := createTestDB(opts)
 	assert.Nil(t, err)
 	assert.Nil(t, db.Close())
-	db, err = Open("test.db", nil)
+	db, err = Open(testDBName, opts)
 	assert.Nil(t, err)
 	assert.Nil(t, db.Close())
 }
 
 func TestFull(t *testing.T) {
-	db, err := createTestDB(&Options{maxSegmentSize: 1024, BackgroundSyncInterval: -1})
+	opts := &Options{
+		BackgroundSyncInterval: -1,
+		FileSystem:             testFS,
+		maxSegmentSize:         1024,
+	}
+	db, err := createTestDB(opts)
 	assert.Nil(t, err)
 	var i byte
 	var n uint8 = 255
@@ -105,7 +143,7 @@ func TestFull(t *testing.T) {
 	sz, err := db.FileSize()
 	assert.Nil(t, err)
 	if sz <= 0 {
-		t.Fatal()
+		t.Fatal(sz)
 	}
 
 	assert.Nil(t, db.Delete([]byte{128}))
@@ -138,20 +176,25 @@ func TestFull(t *testing.T) {
 	expectedSegMetas := db.datalog.segmentMetas()
 	verifyKeysAndClose(0)
 
+	// Open and check again
+	db, err = Open(testDBName, opts)
+	assert.Nil(t, err)
+	verifyKeysAndClose(0)
+
 	// Simulate crash.
-	assert.Nil(t, touchFile(filepath.Join("test.db", lockName)))
-	assert.Nil(t, os.Remove(filepath.Join("test.db", segmentMetaName(0, 1))))
-	assert.Nil(t, os.Remove(filepath.Join("test.db", indexMetaName)))
+	assert.Nil(t, touchFile(testFS, filepath.Join(testDBName, lockName)))
+	assert.Nil(t, testFS.Remove(filepath.Join(testDBName, segmentMetaName(0, 1))))
+	assert.Nil(t, testFS.Remove(filepath.Join(testDBName, indexMetaName)))
 
 	// Open and check again
-	db, err = Open("test.db", nil)
+	db, err = Open(testDBName, opts)
 	assert.Nil(t, err)
 	verifyKeysAndClose(0)
 
 	assert.Equal(t, expectedSegMetas, db.datalog.segmentMetas())
 
 	// Update all items
-	db, err = Open("test.db", nil)
+	db, err = Open(testDBName, opts)
 	assert.Nil(t, err)
 	for i = 0; i < n; i++ {
 		assert.Nil(t, db.Put([]byte{i}, []byte{i + 6}))
@@ -159,7 +202,7 @@ func TestFull(t *testing.T) {
 	verifyKeysAndClose(6)
 
 	// Delete all items
-	db, err = Open("test.db", &Options{BackgroundSyncInterval: time.Millisecond})
+	db, err = Open(testDBName, &Options{BackgroundSyncInterval: time.Millisecond})
 	assert.Nil(t, err)
 	for i = 0; i < n; i++ {
 		assert.Nil(t, db.Delete([]byte{i}))
@@ -174,11 +217,12 @@ func TestFull(t *testing.T) {
 }
 
 func TestLock(t *testing.T) {
-	db, err := createTestDB(nil)
+	opts := &Options{FileSystem: testFS}
+	db, err := createTestDB(opts)
 	assert.Nil(t, err)
 
 	// Opening already opened database returns an error.
-	db2, err2 := Open("test.db", nil)
+	db2, err2 := Open(testDBName, opts)
 	assert.Nil(t, db2)
 	assert.Equal(t, errLocked, err2)
 
@@ -242,26 +286,24 @@ func TestClose(t *testing.T) {
 	db, err := createTestDB(nil)
 	assert.Nil(t, err)
 	assert.Nil(t, db.Close())
-	if _, err := db.Get([]byte{1}); err == nil {
-		t.Fatal()
-	}
-	if err := db.Close(); err == nil {
-		t.Fatal()
-	}
+	_, err = db.Get([]byte{1})
+	assert.NotNil(t, err)
+	assert.NotNil(t, db.Close())
 }
 
 func TestCorruptedIndex(t *testing.T) {
-	db, err := createTestDB(nil)
+	opts := &Options{FileSystem: testFS}
+	db, err := createTestDB(opts)
 	assert.Nil(t, err)
 	assert.Nil(t, db.Close())
 
-	f, err := os.OpenFile(filepath.Join("test.db", indexMetaName), os.O_WRONLY, 0)
+	f, err := testFS.OpenFile(filepath.Join(testDBName, indexMetaName), os.O_RDWR, 0)
 	assert.Nil(t, err)
-	_, err = f.WriteString("corrupted")
+	_, err = f.Write([]byte("corrupted"))
 	assert.Nil(t, err)
 	assert.Nil(t, f.Close())
 
-	db, err = Open("test.db", nil)
+	db, err = Open(testDBName, opts)
 	assert.Nil(t, db)
 	assert.Equal(t, errCorrupted, err)
 }
@@ -293,24 +335,24 @@ func TestFileError(t *testing.T) {
 	}
 
 	t.Run("segment error", func(t *testing.T) {
-		oldf := db.datalog.segments[0].MmapFile
-		db.datalog.segments[0].MmapFile = errf
+		oldf := db.datalog.segments[0].File
+		db.datalog.segments[0].File = errf
 
 		testDB(t)
 
 		assert.Equal(t, errfileError, db.Close())
 
-		db.datalog.segments[0].MmapFile = oldf
+		db.datalog.segments[0].File = oldf
 	})
 
 	t.Run("index error", func(t *testing.T) {
-		oldf := db.index.main.MmapFile
-		db.index.main.MmapFile = errf
+		oldf := db.index.main.File
+		db.index.main.File = errf
 
 		testDB(t)
 		assert.Equal(t, errfileError, db.index.close())
 
-		db.index.main.MmapFile = oldf
+		db.index.main.File = oldf
 	})
 
 	errfs := &errfs{}
@@ -330,12 +372,15 @@ func TestFSError(t *testing.T) {
 }
 
 func TestWordsDict(t *testing.T) {
+	if testFS != fs.Mem {
+		t.Skip()
+	}
 	fwords, err := os.Open("/usr/share/dict/words")
 	if err != nil {
-		t.Skip("words file is not found")
+		t.Skip("words file not found")
 	}
 	defer fwords.Close()
-	db, err := createTestDB(&Options{FileSystem: fs.Mem})
+	db, err := createTestDB(nil)
 	assert.Nil(t, err)
 	scanner := bufio.NewScanner(fwords)
 	items := make(map[string]string)

@@ -4,11 +4,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/akrylysov/pogreb/fs"
 	"github.com/akrylysov/pogreb/internal/assert"
 )
 
 func TestRecovery(t *testing.T) {
-	segPath := filepath.Join("test.db", segmentName(0, 1))
+	segPath := filepath.Join(testDBName, segmentName(0, 1))
 	testCases := []struct {
 		name string
 		fn   func() error
@@ -68,7 +69,8 @@ func TestRecovery(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			db, err := createTestDB(nil)
+			opts := &Options{FileSystem: testFS}
+			db, err := createTestDB(opts)
 			assert.Nil(t, err)
 			// Fill segment 0.
 			var i uint8
@@ -79,16 +81,16 @@ func TestRecovery(t *testing.T) {
 			assert.Nil(t, db.Close())
 
 			// Simulate crash.
-			assert.Nil(t, touchFile(filepath.Join("test.db", lockName)))
+			assert.Nil(t, touchFile(fs.OS, filepath.Join(testDBName, lockName)))
 
 			assert.Nil(t, testCase.fn())
 
-			db, err = Open("test.db", nil)
+			db, err = Open(testDBName, opts)
 			assert.Nil(t, err)
 			assert.Equal(t, uint32(128), db.Count())
 			assert.Nil(t, db.Close())
 
-			db, err = Open("test.db", nil)
+			db, err = Open(testDBName, opts)
 			assert.Nil(t, err)
 			assert.Equal(t, uint32(128), db.Count())
 			for i = 0; i < 128; i++ {
@@ -102,7 +104,8 @@ func TestRecovery(t *testing.T) {
 }
 
 func TestRecoveryDelete(t *testing.T) {
-	db, err := createTestDB(nil)
+	opts := &Options{FileSystem: testFS}
+	db, err := createTestDB(opts)
 	assert.Nil(t, err)
 	assert.Nil(t, db.Put([]byte{1}, []byte{1}))
 	assert.Nil(t, db.Put([]byte{2}, []byte{2}))
@@ -111,9 +114,9 @@ func TestRecoveryDelete(t *testing.T) {
 	assert.Nil(t, db.Close())
 
 	// Simulate crash.
-	assert.Nil(t, touchFile(filepath.Join("test.db", lockName)))
+	assert.Nil(t, touchFile(fs.OS, filepath.Join(testDBName, lockName)))
 
-	db, err = Open("test.db", nil)
+	db, err = Open(testDBName, opts)
 	assert.Nil(t, err)
 
 	assert.Equal(t, uint32(1), db.Count())
@@ -123,6 +126,7 @@ func TestRecoveryDelete(t *testing.T) {
 
 func TestRecoveryCompaction(t *testing.T) {
 	opts := &Options{
+		FileSystem:                 testFS,
 		maxSegmentSize:             1024,
 		compactionMinSegmentSize:   512,
 		compactionMinFragmentation: 0.2,
@@ -175,9 +179,9 @@ func TestRecoveryCompaction(t *testing.T) {
 	assert.Nil(t, db.Close())
 
 	// Simulate crash.
-	assert.Nil(t, touchFile(filepath.Join("test.db", lockName)))
+	assert.Nil(t, touchFile(fs.OS, filepath.Join(testDBName, lockName)))
 
-	db, err = Open("test.db", nil)
+	db, err = Open(testDBName, opts)
 	assert.Nil(t, err)
 
 	assert.Equal(t, uint32(2), db.Count())
@@ -207,9 +211,7 @@ func TestRecoveryIterator(t *testing.T) {
 		return records
 	}
 
-	if len(listRecords()) != 0 {
-		t.Fatal()
-	}
+	assert.Equal(t, 0, len(listRecords()))
 
 	if err := db.Put([]byte{1}, []byte{1}); err != nil {
 		t.Fatal(err)

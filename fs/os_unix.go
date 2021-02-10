@@ -5,25 +5,7 @@ package fs
 import (
 	"os"
 	"syscall"
-	"unsafe"
 )
-
-func mmap(f *os.File, fileSize int64, mmapSize int64) ([]byte, int64, error) {
-	p, err := syscall.Mmap(int(f.Fd()), 0, int(mmapSize), syscall.PROT_READ, syscall.MAP_SHARED)
-	return p, mmapSize, err
-}
-
-func munmap(data []byte) error {
-	return syscall.Munmap(data)
-}
-
-func madviceRandom(data []byte) error {
-	_, _, errno := syscall.Syscall(syscall.SYS_MADVISE, uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)), uintptr(syscall.MADV_RANDOM))
-	if errno != 0 {
-		return errno
-	}
-	return nil
-}
 
 func createLockFile(name string, perm os.FileMode) (LockFile, bool, error) {
 	acquiredExisting := false
@@ -40,5 +22,5 @@ func createLockFile(name string, perm os.FileMode) (LockFile, bool, error) {
 		}
 		return nil, false, err
 	}
-	return &oslockfile{f, name}, acquiredExisting, nil
+	return &osLockFile{f, name}, acquiredExisting, nil
 }

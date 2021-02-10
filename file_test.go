@@ -10,7 +10,7 @@ import (
 
 type errfs struct{}
 
-func (fs *errfs) OpenFile(name string, flag int, perm os.FileMode) (fs.MmapFile, error) {
+func (fs *errfs) OpenFile(name string, flag int, perm os.FileMode) (fs.File, error) {
 	return &errfile{}, nil
 }
 
@@ -24,6 +24,14 @@ func (fs *errfs) Stat(name string) (os.FileInfo, error) {
 
 func (fs *errfs) Remove(name string) error {
 	return errfileError
+}
+
+func (fs *errfs) Rename(oldpath, newpath string) error {
+	return errfileError
+}
+
+func (fs *errfs) ReadDir(name string) ([]os.FileInfo, error) {
+	return nil, errfileError
 }
 
 type errfile struct{}
@@ -98,9 +106,13 @@ func (m *errfile) Slice(start int64, end int64) ([]byte, error) {
 	return nil, errfileError
 }
 
-func (m *errfile) Mmap(size int64) error {
+func (m *errfile) Mmap(fileSize int64, mappingSize int64) error {
+	return errfileError
+}
+
+func (m *errfile) Munmap() error {
 	return errfileError
 }
 
 // Compile time interface assertion.
-var _ fs.MmapFile = &errfile{}
+var _ fs.File = &errfile{}

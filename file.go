@@ -8,7 +8,7 @@ import (
 )
 
 type file struct {
-	fs.MmapFile
+	fs.File
 	size int64
 }
 
@@ -28,7 +28,7 @@ func openFile(fsyst fs.FileSystem, name string, truncate bool) (*file, error) {
 			_ = clean()
 		}
 	}()
-	f.MmapFile = fi
+	f.File = fi
 	stat, err := fi.Stat()
 	if err != nil {
 		return f, err
@@ -82,7 +82,7 @@ func (f *file) extend(size uint32) (int64, error) {
 		return 0, err
 	}
 	f.size += int64(size)
-	return off, f.Mmap(f.size)
+	return off, nil
 }
 
 func (f *file) append(data []byte) (int64, error) {
@@ -91,17 +91,5 @@ func (f *file) append(data []byte) (int64, error) {
 		return 0, err
 	}
 	f.size += int64(len(data))
-	return off, f.Mmap(f.size)
-}
-
-func (f *file) truncate(size uint32) error {
-	// Truncating memory-mapped file will fail on Windows. Unmap it first.
-	if err := f.Mmap(0); err != nil {
-		return err
-	}
-	if err := f.Truncate(int64(size)); err != nil {
-		return err
-	}
-	f.size = int64(size)
-	return f.Mmap(f.size)
+	return off, nil
 }

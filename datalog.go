@@ -2,7 +2,6 @@ package pogreb
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -24,7 +23,7 @@ type datalog struct {
 }
 
 func openDatalog(opts *Options) (*datalog, error) {
-	files, err := ioutil.ReadDir(opts.path)
+	files, err := opts.FileSystem.ReadDir(opts.path)
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +32,7 @@ func openDatalog(opts *Options) (*datalog, error) {
 		opts: opts,
 	}
 
+	// Open existing segments.
 	for _, file := range files {
 		name := file.Name()
 		ext := filepath.Ext(name)
@@ -164,31 +164,21 @@ func (dl *datalog) removeSegment(seg *segment) error {
 
 func (dl *datalog) readKeyValue(sl slot) ([]byte, []byte, error) {
 	off := int64(sl.offset) + 6 // Skip key size and value size.
-	f := dl.segments[sl.segmentID]
-	keyValue, err := f.Slice(off, off+int64(sl.kvSize()))
+	seg := dl.segments[sl.segmentID]
+	keyValue, err := seg.Slice(off, off+int64(sl.kvSize()))
 	if err != nil {
 		return nil, nil, err
 	}
-	/*keyValue := make([]byte, sl.kvSize())
-	_, err := f.ReadAt(keyValue, off)
-	if err != nil {
-		return nil, nil, err
-	}*/
 	return keyValue[:sl.keySize], keyValue[sl.keySize:], nil
 }
 
 func (dl *datalog) readKey(sl slot) ([]byte, error) {
 	off := int64(sl.offset) + 6
-	f := dl.segments[sl.segmentID]
-	return f.Slice(off, off+int64(sl.keySize))
-	/*key := make([]byte, sl.keySize)
-	_, err := f.ReadAt(key, off)
-	if err != nil {
-		return nil, err
-	}
-	return key, nil*/
+	seg := dl.segments[sl.segmentID]
+	return seg.Slice(off, off+int64(sl.keySize))
 }
 
+// trackDel updates segment's metadata for deleted or overwritten items.
 func (dl *datalog) trackDel(sl slot) {
 	meta := dl.segments[sl.segmentID].meta
 	meta.DeletedKeys++
@@ -196,17 +186,19 @@ func (dl *datalog) trackDel(sl slot) {
 }
 
 func (dl *datalog) del(key []byte) error {
-	delRecord := encodeDeleteRecord(key)
-	_, _, err := dl.writeRecord(delRecord, recordTypeDelete)
+	rec := encodeDeleteRecord(key)
+	_, _, err := dl.writeRecord(rec, recordTypeDelete)
 	if err != nil {
 		return err
 	}
-	dl.curSeg.meta.DeletedBytes += uint32(len(delRecord))
+	// Compaction removes delete records, increment DeletedBytes.
+	dl.curSeg.meta.DeletedBytes += uint32(len(rec))
 	return nil
 }
 
 func (dl *datalog) writeRecord(data []byte, rt recordType) (uint16, uint32, error) {
 	if dl.curSeg.meta.Full || dl.curSeg.size+int64(len(data)) > int64(dl.opts.maxSegmentSize) {
+		// Current segment is full, create a new one.
 		dl.curSeg.meta.Full = true
 		if err := dl.swapSegment(); err != nil {
 			return 0, 0, err
