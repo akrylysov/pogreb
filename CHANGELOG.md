@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.10.0] - 2021-02-09
+### Added
+- Memory-mapped file access can now be disabled by setting `Options.FileSystem` to `fs.OS`. 
+### Changed
+- The default file system implementation is changed to `fs.OSMMap`.
+
 ## [0.9.2] - 2021-01-01
 ### Changed
 - Write-ahead log doesn't rely on wall-clock time anymore. It prevents potential race conditions during compaction and recovery.
@@ -41,4 +47,3 @@
 - Windows support (@mattn).
 ### Changed
 - Improve freelist performance.
-
