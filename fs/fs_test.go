@@ -317,6 +317,19 @@ func testFS(t *testing.T, fsys FileSystem) {
 		assert.Equal(t, "test2", fi.Name())
 	})
 
+	t.Run("ReadDir", func(t *testing.T) {
+		fis, err := fsys.ReadDir(".")
+		assert.Nil(t, err)
+
+		var hasTestFile bool
+		for _, fi := range fis {
+			if fi.Name() == "test2" {
+				hasTestFile = true
+			}
+		}
+		assert.Equal(t, true, hasTestFile)
+	})
+
 	t.Run("Remove", func(t *testing.T) {
 		err := fsys.Remove("test2")
 		assert.Nil(t, err)
