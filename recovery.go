@@ -11,10 +11,10 @@ const (
 	recoveryBackupExt = ".bac"
 )
 
-func backupNonsegmentFiles(fsys fs.FileSystem, path string) error {
+func backupNonsegmentFiles(fsys fs.FileSystem) error {
 	logger.Println("moving non-segment files...")
 
-	files, err := fsys.ReadDir(path)
+	files, err := fsys.ReadDir(".")
 	if err != nil {
 		return err
 	}
@@ -25,21 +25,20 @@ func backupNonsegmentFiles(fsys fs.FileSystem, path string) error {
 		if ext == segmentExt || name == lockName {
 			continue
 		}
-		src := filepath.Join(path, name)
-		dst := src + recoveryBackupExt
-		if err := fsys.Rename(src, dst); err != nil {
+		dst := name + recoveryBackupExt
+		if err := fsys.Rename(name, dst); err != nil {
 			return err
 		}
-		logger.Printf("moved %s to %s", src, dst)
+		logger.Printf("moved %s to %s", name, dst)
 	}
 
 	return nil
 }
 
-func removeRecoveryBackupFiles(fsys fs.FileSystem, path string) error {
+func removeRecoveryBackupFiles(fsys fs.FileSystem) error {
 	logger.Println("removing recovery backup files...")
 
-	files, err := fsys.ReadDir(path)
+	files, err := fsys.ReadDir(".")
 	if err != nil {
 		return err
 	}
@@ -50,11 +49,10 @@ func removeRecoveryBackupFiles(fsys fs.FileSystem, path string) error {
 		if ext != recoveryBackupExt {
 			continue
 		}
-		src := filepath.Join(path, name)
-		if err := fsys.Remove(src); err != nil {
+		if err := fsys.Remove(name); err != nil {
 			return err
 		}
-		logger.Printf("removed %s", src)
+		logger.Printf("removed %s", name)
 	}
 
 	return nil
@@ -153,7 +151,7 @@ func (db *DB) recover() error {
 		segments[i].meta.Full = true
 	}
 
-	if err := removeRecoveryBackupFiles(db.opts.FileSystem, db.opts.path); err != nil {
+	if err := removeRecoveryBackupFiles(db.opts.FileSystem); err != nil {
 		logger.Printf("error removing recovery backups files: %v", err)
 	}
 

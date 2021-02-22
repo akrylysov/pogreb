@@ -5,7 +5,6 @@ import (
 	"context"
 	"math"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -77,7 +76,7 @@ func Open(path string, opts *Options) (*DB, error) {
 		// Lock file alredy existed, but the process managed to aquire it.
 		// It means the database wasn't closed properly.
 		// Start recovery process.
-		if err := backupNonsegmentFiles(opts.FileSystem, path); err != nil {
+		if err := backupNonsegmentFiles(opts.FileSystem); err != nil {
 			return nil, err
 		}
 	}
@@ -137,12 +136,12 @@ func (db *DB) writeMeta() error {
 	m := dbMeta{
 		HashSeed: db.hashSeed,
 	}
-	return writeGobFile(db.opts.FileSystem, filepath.Join(db.opts.path, dbMetaName), m)
+	return writeGobFile(db.opts.FileSystem, dbMetaName, m)
 }
 
 func (db *DB) readMeta() error {
 	m := dbMeta{}
-	if err := readGobFile(db.opts.FileSystem, filepath.Join(db.opts.path, dbMetaName), &m); err != nil {
+	if err := readGobFile(db.opts.FileSystem, dbMetaName, &m); err != nil {
 		return err
 	}
 	db.hashSeed = m.HashSeed
@@ -400,7 +399,7 @@ func (db *DB) Metrics() Metrics {
 // FileSize returns the total size of the disk storage used by the DB.
 func (db *DB) FileSize() (int64, error) {
 	var size int64
-	files, err := db.opts.FileSystem.ReadDir(db.opts.path)
+	files, err := db.opts.FileSystem.ReadDir(".")
 	if err != nil {
 		return 0, err
 	}

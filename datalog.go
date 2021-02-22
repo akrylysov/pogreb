@@ -23,7 +23,7 @@ type datalog struct {
 }
 
 func openDatalog(opts *Options) (*datalog, error) {
-	files, err := opts.FileSystem.ReadDir(opts.path)
+	files, err := opts.FileSystem.ReadDir(".")
 	if err != nil {
 		return nil, err
 	}
@@ -77,15 +77,15 @@ func parseSegmentName(name string) (uint16, uint64, error) {
 }
 
 func (dl *datalog) openSegment(name string, id uint16, seqID uint64) (*segment, error) {
-	f, err := openFile(dl.opts.FileSystem, filepath.Join(dl.opts.path, name), false)
+	f, err := openFile(dl.opts.FileSystem, name, false)
 	if err != nil {
 		return nil, err
 	}
 
 	meta := &segmentMeta{}
 	if !f.empty() {
-		metaPath := filepath.Join(dl.opts.path, name+metaExt)
-		if err := readGobFile(dl.opts.FileSystem, metaPath, &meta); err != nil {
+		metaName := name + metaExt
+		if err := readGobFile(dl.opts.FileSystem, metaName, &meta); err != nil {
 			logger.Printf("error reading segment meta %d: %v", id, err)
 			// TODO: rebuild meta?
 		}
@@ -148,14 +148,13 @@ func (dl *datalog) removeSegment(seg *segment) error {
 	}
 
 	// Remove segment meta from FS.
-	metaPath := filepath.Join(dl.opts.path, seg.name+segmentExt)
-	if err := dl.opts.FileSystem.Remove(metaPath); err != nil && !os.IsNotExist(err) {
+	metaName := seg.name + segmentExt
+	if err := dl.opts.FileSystem.Remove(metaName); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
 	// Remove segment from FS.
-	filePath := filepath.Join(dl.opts.path, seg.name)
-	if err := dl.opts.FileSystem.Remove(filePath); err != nil {
+	if err := dl.opts.FileSystem.Remove(seg.name); err != nil {
 		return err
 	}
 
@@ -233,8 +232,8 @@ func (dl *datalog) close() error {
 		if err := seg.Close(); err != nil {
 			return err
 		}
-		metaPath := filepath.Join(dl.opts.path, seg.name+metaExt)
-		if err := writeGobFile(dl.opts.FileSystem, metaPath, seg.meta); err != nil {
+		metaName := seg.name + metaExt
+		if err := writeGobFile(dl.opts.FileSystem, metaName, seg.meta); err != nil {
 			return err
 		}
 	}

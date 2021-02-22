@@ -1,9 +1,5 @@
 package pogreb
 
-import (
-	"path/filepath"
-)
-
 const (
 	indexExt          = ".pix"
 	indexMainName     = "main" + indexExt
@@ -33,11 +29,11 @@ type indexMeta struct {
 }
 
 func openIndex(opts *Options) (*index, error) {
-	main, err := openFile(opts.FileSystem, filepath.Join(opts.path, indexMainName), false)
+	main, err := openFile(opts.FileSystem, indexMainName, false)
 	if err != nil {
 		return nil, err
 	}
-	overflow, err := openFile(opts.FileSystem, filepath.Join(opts.path, indexOverflowName), false)
+	overflow, err := openFile(opts.FileSystem, indexOverflowName, false)
 	if err != nil {
 		_ = main.Close()
 		return nil, err
@@ -70,12 +66,12 @@ func (idx *index) writeMeta() error {
 		SplitBucketIndex:    idx.splitBucketIdx,
 		FreeOverflowBuckets: idx.freeBucketOffs,
 	}
-	return writeGobFile(idx.opts.FileSystem, filepath.Join(idx.opts.path, indexMetaName), m)
+	return writeGobFile(idx.opts.FileSystem, indexMetaName, m)
 }
 
 func (idx *index) readMeta() error {
 	m := indexMeta{}
-	if err := readGobFile(idx.opts.FileSystem, filepath.Join(idx.opts.path, indexMetaName), &m); err != nil {
+	if err := readGobFile(idx.opts.FileSystem, indexMetaName, &m); err != nil {
 		return err
 	}
 	idx.level = m.Level
