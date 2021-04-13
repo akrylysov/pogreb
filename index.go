@@ -1,5 +1,9 @@
 package pogreb
 
+import (
+	"errors"
+)
+
 const (
 	indexExt          = ".pix"
 	indexMainName     = "main" + indexExt
@@ -9,15 +13,17 @@ const (
 )
 
 // index is an on-disk linear hashing hash table.
+// It uses two files to store the hash table on disk - "main" and "overflow" index files.
+// Each index file holds an array of buckets.
 type index struct {
 	opts           *Options
-	main           *file
-	overflow       *file
-	freeBucketOffs []int64
-	level          uint8
-	numKeys        uint32
-	numBuckets     uint32
-	splitBucketIdx uint32
+	main           *file   // Main index file.
+	overflow       *file   // Overflow index file.
+	freeBucketOffs []int64 // Offsets of freed buckets.
+	level          uint8   // Maximum number of buckets on a logarithmic scale.
+	numKeys        uint32  // Number of keys.
+	numBuckets     uint32  // Number of buckets.
+	splitBucketIdx uint32  // Index of the bucket to split on next split.
 }
 
 type indexMeta struct {
@@ -27,6 +33,9 @@ type indexMeta struct {
 	SplitBucketIndex    uint32
 	FreeOverflowBuckets []int64
 }
+
+// matchKeyFunc returns whether the slot matches the key sought.
+type matchKeyFunc func(slot) (bool, error)
 
 func openIndex(opts *Options) (*index, error) {
 	main, err := openFile(opts.FileSystem, indexMainName, false)
@@ -45,6 +54,7 @@ func openIndex(opts *Options) (*index, error) {
 		numBuckets: 1,
 	}
 	if main.empty() {
+		// Add an empty bucket.
 		if _, err = idx.main.extend(bucketSize); err != nil {
 			_ = main.Close()
 			_ = overflow.Close()
@@ -82,10 +92,6 @@ func (idx *index) readMeta() error {
 	return nil
 }
 
-func bucketOffset(idx uint32) int64 {
-	return int64(headerSize) + (int64(bucketSize) * int64(idx))
-}
-
 func (idx *index) bucketIndex(hash uint32) uint32 {
 	bidx := hash & ((1 << idx.level) - 1)
 	if bidx < idx.splitBucketIdx {
@@ -94,98 +100,124 @@ func (idx *index) bucketIndex(hash uint32) uint32 {
 	return bidx
 }
 
-// TODO: deeply nested callbacks are hard to reason about.
-// TODO: rewrite the function to return an iterator if there is no performance implications.
-func (idx *index) forEachBucket(startBucketIdx uint32, cb func(bucketHandle) (bool, error)) error {
-	off := bucketOffset(startBucketIdx)
-	f := idx.main
-	for {
-		b := bucketHandle{file: f, offset: off}
-		if err := b.read(); err != nil {
-			return err
-		}
-		if stop, err := cb(b); stop || err != nil {
-			return err
-		}
-		if b.next == 0 {
-			return nil
-		}
-		off = b.next
-		f = idx.overflow
+type bucketIterator struct {
+	off      int64 // Offset of the next bucket.
+	f        *file // Current index file.
+	overflow *file // Overflow index file.
+}
+
+// bucketOffset returns on-disk bucket offset by the bucket index.
+func bucketOffset(idx uint32) int64 {
+	return int64(headerSize) + (int64(bucketSize) * int64(idx))
+}
+
+func (idx *index) newBucketIterator(startBucketIdx uint32) *bucketIterator {
+	return &bucketIterator{
+		off:      bucketOffset(startBucketIdx),
+		f:        idx.main,
+		overflow: idx.overflow,
 	}
 }
 
-func (idx *index) get(hash uint32, cb func(slot) (bool, error)) error {
-	return idx.forEachBucket(idx.bucketIndex(hash), func(b bucketHandle) (bool, error) {
-		for i := 0; i < slotsPerBucket; i++ {
-			sl := b.slots[i]
-			if sl.offset == 0 {
-				return b.next == 0, nil
-			}
-			if hash == sl.hash {
-				if found, err := cb(sl); found || err != nil {
-					return found, err
-				}
-			}
-		}
-		return false, nil
-	})
+func (it *bucketIterator) next() (bucketHandle, error) {
+	if it.off == 0 {
+		return bucketHandle{}, ErrIterationDone
+	}
+	b := bucketHandle{file: it.f, offset: it.off}
+	if err := b.read(); err != nil {
+		return bucketHandle{}, err
+	}
+	it.f = it.overflow
+	it.off = b.next
+	return b, nil
 }
 
-func (idx *index) put(sl slot, cb func(slot) (bool, error)) error {
-	var b *bucketHandle
-	var originalB *bucketHandle
-	slotIdx := 0
-	err := idx.forEachBucket(idx.bucketIndex(sl.hash), func(curb bucketHandle) (bool, error) {
-		b = &curb
+func (idx *index) get(hash uint32, matchKey matchKeyFunc) error {
+	it := idx.newBucketIterator(idx.bucketIndex(hash))
+	for {
+		b, err := it.next()
+		if err == ErrIterationDone {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
 		for i := 0; i < slotsPerBucket; i++ {
-			cursl := b.slots[i]
-			slotIdx = i
-			if cursl.offset == 0 {
-				// Found an empty slot.
-				return true, nil
+			sl := b.slots[i]
+			// No more slots in the bucket.
+			if sl.offset == 0 {
+				break
 			}
-			if sl.hash == cursl.hash {
-				if found, err := cb(cursl); err != nil || found {
-					// Key already exists.
-					return found, err
-				}
+			if hash != sl.hash {
+				continue
+			}
+			if match, err := matchKey(sl); match || err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (idx *index) findInsertionBucket(newSlot slot, matchKey matchKeyFunc) (*slotWriter, bool, error) {
+	sw := &slotWriter{}
+	it := idx.newBucketIterator(idx.bucketIndex(newSlot.hash))
+	for {
+		b, err := it.next()
+		if err == ErrIterationDone {
+			return nil, false, errors.New("failed to insert a new slot")
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		sw.bucket = &b
+		var i int
+		for i = 0; i < slotsPerBucket; i++ {
+			sl := b.slots[i]
+			if sl.offset == 0 {
+				// Found an empty slot.
+				sw.slotIdx = i
+				return sw, false, nil
+			}
+			if newSlot.hash != sl.hash {
+				continue
+			}
+			match, err := matchKey(sl)
+			if err != nil {
+				return nil, false, err
+			}
+			if match {
+				// Key already in the index.
+				// The slot writer will overwrite the existing slot.
+				sw.slotIdx = i
+				return sw, true, nil
 			}
 		}
 		if b.next == 0 {
-			// Couldn't find free space in the current bucket, create a new overflow bucket.
-			nextBucket, err := idx.createOverflowBucket()
-			if err != nil {
-				return false, err
-			}
-			b.next = nextBucket.offset
-			originalB = b
-			b = nextBucket
-			slotIdx = 0
-			return true, nil
+			// No more buckets in the chain.
+			sw.slotIdx = i
+			return sw, false, nil
 		}
-		return false, nil
-	})
+	}
+}
+
+func (idx *index) put(newSlot slot, matchKey matchKeyFunc) error {
+	if idx.numKeys == MaxKeys {
+		return errFull
+	}
+	sw, overwritingExisting, err := idx.findInsertionBucket(newSlot, matchKey)
 	if err != nil {
 		return err
 	}
-
-	// Inserting a new item.
-	if b.slots[slotIdx].offset == 0 {
-		if idx.numKeys == MaxKeys {
-			return errFull
-		}
-		idx.numKeys++
-	}
-
-	b.slots[slotIdx] = sl
-	if err := b.write(); err != nil {
+	if err := sw.insert(newSlot, idx); err != nil {
 		return err
 	}
-	if originalB != nil {
-		return originalB.write()
+	if err := sw.write(); err != nil {
+		return err
 	}
-
+	if overwritingExisting {
+		return nil
+	}
+	idx.numKeys++
 	if float64(idx.numKeys)/float64(idx.numBuckets*slotsPerBucket) > loadFactor {
 		if err := idx.split(); err != nil {
 			return err
@@ -194,38 +226,39 @@ func (idx *index) put(sl slot, cb func(slot) (bool, error)) error {
 	return nil
 }
 
-func (idx *index) delete(hash uint32, cb func(slot) (bool, error)) error {
-	b := bucketHandle{}
-	slotIdx := -1
-	err := idx.forEachBucket(idx.bucketIndex(hash), func(curb bucketHandle) (bool, error) {
-		b = curb
+func (idx *index) delete(hash uint32, matchKey matchKeyFunc) error {
+	it := idx.newBucketIterator(idx.bucketIndex(hash))
+	for {
+		b, err := it.next()
+		if err == ErrIterationDone {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
 		for i := 0; i < slotsPerBucket; i++ {
 			sl := b.slots[i]
 			if sl.offset == 0 {
-				return b.next == 0, nil
+				break
 			}
-			if hash == sl.hash {
-				found, err := cb(sl)
-				if err != nil {
-					return true, err
-				}
-				if found {
-					slotIdx = i
-					return true, nil
-				}
+			if hash != sl.hash {
+				continue
 			}
+			match, err := matchKey(sl)
+			if err != nil {
+				return err
+			}
+			if !match {
+				continue
+			}
+			b.del(i)
+			if err := b.write(); err != nil {
+				return err
+			}
+			idx.numKeys--
+			return nil
 		}
-		return false, nil
-	})
-	if slotIdx == -1 || err != nil {
-		return err
 	}
-	b.del(slotIdx)
-	if err := b.write(); err != nil {
-		return err
-	}
-	idx.numKeys--
-	return nil
 }
 
 func (idx *index) createOverflowBucket() (*bucketHandle, error) {
@@ -259,7 +292,7 @@ func (idx *index) split() error {
 		return err
 	}
 
-	newBucket := slotWriter{
+	sw := slotWriter{
 		bucket: &bucketHandle{file: idx.main, offset: newBucketOff},
 	}
 
@@ -270,34 +303,38 @@ func (idx *index) split() error {
 	}
 
 	var overflowBuckets []int64
-	err = idx.forEachBucket(updatedBucketIdx, func(curb bucketHandle) (bool, error) {
+	it := idx.newBucketIterator(updatedBucketIdx)
+	for {
+		b, err := it.next()
+		if err == ErrIterationDone {
+			break
+		}
+		if err != nil {
+			return err
+		}
 		for j := 0; j < slotsPerBucket; j++ {
-			sl := curb.slots[j]
+			sl := b.slots[j]
 			if sl.offset == 0 {
 				break
 			}
 			if idx.bucketIndex(sl.hash) == updatedBucketIdx {
 				if err := updatedBucket.insert(sl, idx); err != nil {
-					return true, err
+					return err
 				}
 			} else {
-				if err := newBucket.insert(sl, idx); err != nil {
-					return true, err
+				if err := sw.insert(sl, idx); err != nil {
+					return err
 				}
 			}
 		}
-		if curb.next != 0 {
-			overflowBuckets = append(overflowBuckets, curb.next)
+		if b.next != 0 {
+			overflowBuckets = append(overflowBuckets, b.next)
 		}
-		return false, nil
-	})
-	if err != nil {
-		return err
 	}
 
 	idx.freeOverflowBucket(overflowBuckets...)
 
-	if err := newBucket.write(); err != nil {
+	if err := sw.write(); err != nil {
 		return err
 	}
 	if err := updatedBucket.write(); err != nil {

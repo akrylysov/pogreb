@@ -21,6 +21,34 @@ type ItemIterator struct {
 	mu            sync.Mutex
 }
 
+// fetchItems adds items to the iterator queue from a bucket located at nextBucketIdx.
+func (it *ItemIterator) fetchItems(nextBucketIdx uint32) error {
+	bit := it.db.index.newBucketIterator(nextBucketIdx)
+	for {
+		b, err := bit.next()
+		if err == ErrIterationDone {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for i := 0; i < slotsPerBucket; i++ {
+			sl := b.slots[i]
+			if sl.offset == 0 {
+				// No more items in the bucket.
+				break
+			}
+			key, value, err := it.db.datalog.readKeyValue(sl)
+			if err != nil {
+				return err
+			}
+			key = cloneBytes(key)
+			value = cloneBytes(value)
+			it.queue = append(it.queue, item{key: key, value: value})
+		}
+	}
+}
+
 // Next returns the next key-value pair if available, otherwise it returns ErrIterationDone error.
 func (it *ItemIterator) Next() ([]byte, []byte, error) {
 	it.mu.Lock()
@@ -29,32 +57,12 @@ func (it *ItemIterator) Next() ([]byte, []byte, error) {
 	it.db.mu.RLock()
 	defer it.db.mu.RUnlock()
 
-	if len(it.queue) == 0 {
-		for it.nextBucketIdx < it.db.index.numBuckets {
-			err := it.db.index.forEachBucket(it.nextBucketIdx, func(b bucketHandle) (bool, error) {
-				for i := 0; i < slotsPerBucket; i++ {
-					sl := b.slots[i]
-					if sl.offset == 0 {
-						return true, nil
-					}
-					key, value, err := it.db.datalog.readKeyValue(sl)
-					if err != nil {
-						return true, err
-					}
-					key = cloneBytes(key)
-					value = cloneBytes(value)
-					it.queue = append(it.queue, item{key: key, value: value})
-				}
-				return false, nil
-			})
-			if err != nil {
-				return nil, nil, err
-			}
-			it.nextBucketIdx++
-			if len(it.queue) > 0 {
-				break
-			}
+	// The iterator queue is empty and we have more buckets to check.
+	for len(it.queue) == 0 && it.nextBucketIdx < it.db.index.numBuckets {
+		if err := it.fetchItems(it.nextBucketIdx); err != nil {
+			return nil, nil, err
 		}
+		it.nextBucketIdx++
 	}
 
 	if len(it.queue) > 0 {
