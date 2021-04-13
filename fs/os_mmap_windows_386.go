@@ -1,3 +1,7 @@
 package fs
 
-const maxMmapSize = 1 << 31
+import (
+	"math"
+)
+
+const maxMmapSize = math.MaxInt32
