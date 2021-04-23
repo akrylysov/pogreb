@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/akrylysov/pogreb/fs"
+	"github.com/akrylysov/pogreb/internal/errors"
 	"github.com/akrylysov/pogreb/internal/hash"
 )
 
@@ -16,10 +17,8 @@ const (
 	// MaxKeyLength is the maximum size of a key in bytes.
 	MaxKeyLength = math.MaxUint16
 
-	maxUint30 = 1<<30 - 1
-
 	// MaxValueLength is the maximum size of a value in bytes.
-	MaxValueLength = maxUint30
+	MaxValueLength = 512 << 20 // 512 MiB
 
 	// MaxKeys is the maximum numbers of keys in the DB.
 	MaxKeys = math.MaxUint32
@@ -31,17 +30,17 @@ const (
 // DB represents the key-value storage.
 // All DB methods are safe for concurrent use by multiple goroutines.
 type DB struct {
-	mu                sync.RWMutex
+	mu                sync.RWMutex // Allows multiple database readers or a single writer.
 	opts              *Options
 	index             *index
 	datalog           *datalog
-	lock              fs.LockFile
+	lock              fs.LockFile // Prevents opening multiple instances of the same database.
 	hashSeed          uint32
-	metrics           Metrics
+	metrics           *Metrics
 	syncWrites        bool
 	cancelBgWorker    context.CancelFunc
 	closeWg           sync.WaitGroup
-	compactionRunning int32
+	compactionRunning int32 // Prevents running compactions concurrently.
 }
 
 type dbMeta struct {
@@ -63,7 +62,7 @@ func Open(path string, opts *Options) (*DB, error) {
 		if err == os.ErrExist {
 			err = errLocked
 		}
-		return nil, err
+		return nil, errors.Wrap(err, "creating lock file")
 	}
 	clean := lock.Unlock
 	defer func() {
@@ -73,7 +72,7 @@ func Open(path string, opts *Options) (*DB, error) {
 	}()
 
 	if acquiredExistingLock {
-		// Lock file alredy existed, but the process managed to aquire it.
+		// Lock file already existed, but the process managed to acquire it.
 		// It means the database wasn't closed properly.
 		// Start recovery process.
 		if err := backupNonsegmentFiles(opts.FileSystem); err != nil {
@@ -83,12 +82,12 @@ func Open(path string, opts *Options) (*DB, error) {
 
 	index, err := openIndex(opts)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "opening index")
 	}
 
 	datalog, err := openDatalog(opts)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "opening datalog")
 	}
 
 	db := &DB{
@@ -96,7 +95,7 @@ func Open(path string, opts *Options) (*DB, error) {
 		index:      index,
 		datalog:    datalog,
 		lock:       lock,
-		metrics:    newMetrics(),
+		metrics:    &Metrics{},
 		syncWrites: opts.BackgroundSyncInterval == -1,
 	}
 	if index.count() == 0 {
@@ -108,13 +107,13 @@ func Open(path string, opts *Options) (*DB, error) {
 		db.hashSeed = seed
 	} else {
 		if err := db.readMeta(); err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "reading db meta")
 		}
 	}
 
 	if acquiredExistingLock {
 		if err := db.recover(); err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "recovering")
 		}
 	}
 
@@ -176,23 +175,17 @@ func (db *DB) startBackgroundWorker() {
 		compactC, compactStop := newNullableTicker(db.opts.BackgroundCompactionInterval)
 		defer compactStop()
 
-		var lastModifications int64
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-syncC:
-				modifications := db.metrics.Puts.Value() + db.metrics.Dels.Value()
-				if modifications == lastModifications {
-					break
-				}
-				lastModifications = modifications
 				if err := db.Sync(); err != nil {
-					logger.Printf("error synchronizing databse: %v", err)
+					logger.Printf("error synchronizing database: %v", err)
 				}
 			case <-compactC:
 				if cr, err := db.Compact(); err != nil {
-					logger.Printf("error compacting databse: %v", err)
+					logger.Printf("error compacting database: %v", err)
 				} else if cr.CompactedSegments > 0 {
 					logger.Printf("compacted database: %+v", cr)
 				}
@@ -392,7 +385,7 @@ func (db *DB) Count() uint32 {
 }
 
 // Metrics returns the DB metrics.
-func (db *DB) Metrics() Metrics {
+func (db *DB) Metrics() *Metrics {
 	return db.metrics
 }
 

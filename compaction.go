@@ -2,6 +2,8 @@ package pogreb
 
 import (
 	"sync/atomic"
+
+	"github.com/akrylysov/pogreb/internal/errors"
 )
 
 // promoteRecord writes the record to the current segment if the index still points to the record.
@@ -128,6 +130,7 @@ func (db *DB) pickForCompaction() []*segment {
 }
 
 // Compact compacts the DB. Deleted and overwritten items are discarded.
+// Returns an error if compaction is already in progress.
 func (db *DB) Compact() (CompactionResult, error) {
 	cr := CompactionResult{}
 
@@ -143,14 +146,14 @@ func (db *DB) Compact() (CompactionResult, error) {
 	segments := db.pickForCompaction()
 	db.mu.RUnlock()
 
-	for _, f := range segments {
-		fcr, err := db.compact(f)
+	for _, seg := range segments {
+		segcr, err := db.compact(seg)
 		if err != nil {
-			return cr, err
+			return cr, errors.Wrapf(err, "compacting segment %s", seg.name)
 		}
 		cr.CompactedSegments++
-		cr.ReclaimedRecords += fcr.ReclaimedRecords
-		cr.ReclaimedBytes += fcr.ReclaimedBytes
+		cr.ReclaimedRecords += segcr.ReclaimedRecords
+		cr.ReclaimedBytes += segcr.ReclaimedBytes
 	}
 
 	return cr, nil

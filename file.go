@@ -7,6 +7,8 @@ import (
 	"github.com/akrylysov/pogreb/fs"
 )
 
+// file is a database file.
+// When stored in a file system, the file starts with a header.
 type file struct {
 	fs.File
 	size int64
@@ -48,7 +50,7 @@ func openFile(fsyst fs.FileSystem, name string, truncate bool) (*file, error) {
 		return nil, err
 	}
 	clean = nil
-	return f, err
+	return f, nil
 }
 
 func (f *file) writeHeader() error {

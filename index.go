@@ -1,7 +1,7 @@
 package pogreb
 
 import (
-	"errors"
+	"github.com/akrylysov/pogreb/internal/errors"
 )
 
 const (
@@ -40,12 +40,12 @@ type matchKeyFunc func(slot) (bool, error)
 func openIndex(opts *Options) (*index, error) {
 	main, err := openFile(opts.FileSystem, indexMainName, false)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "opening main index")
 	}
 	overflow, err := openFile(opts.FileSystem, indexOverflowName, false)
 	if err != nil {
 		_ = main.Close()
-		return nil, err
+		return nil, errors.Wrap(err, "opening overflow index")
 	}
 	idx := &index{
 		opts:       opts,
@@ -63,7 +63,7 @@ func openIndex(opts *Options) (*index, error) {
 	} else if err := idx.readMeta(); err != nil {
 		_ = main.Close()
 		_ = overflow.Close()
-		return nil, err
+		return nil, errors.Wrap(err, "opening index meta")
 	}
 	return idx, nil
 }

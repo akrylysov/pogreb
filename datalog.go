@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/akrylysov/pogreb/internal/errors"
 )
 
 const (
@@ -45,7 +47,7 @@ func openDatalog(opts *Options) (*datalog, error) {
 		}
 		seg, err := dl.openSegment(name, id, seqID)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "opening segment %s", name)
 		}
 		if seg.sequenceID > dl.maxSequenceID {
 			dl.maxSequenceID = seg.sequenceID

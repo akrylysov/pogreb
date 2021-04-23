@@ -224,7 +224,7 @@ func TestLock(t *testing.T) {
 	// Opening already opened database returns an error.
 	db2, err2 := Open(testDBName, opts)
 	assert.Nil(t, db2)
-	assert.Equal(t, errLocked, err2)
+	assert.NotNil(t, err2)
 
 	assert.Nil(t, db.Close())
 }
@@ -305,7 +305,7 @@ func TestCorruptedIndex(t *testing.T) {
 
 	db, err = Open(testDBName, opts)
 	assert.Nil(t, db)
-	assert.Equal(t, errCorrupted, err)
+	assert.NotNil(t, err)
 }
 
 func TestFileError(t *testing.T) {
@@ -368,7 +368,7 @@ func TestFileError(t *testing.T) {
 func TestFSError(t *testing.T) {
 	db, err := createTestDB(&Options{FileSystem: &errfs{}})
 	assert.Nil(t, db)
-	assert.Equal(t, errfileError, err)
+	assert.NotNil(t, err)
 }
 
 func TestWordsDict(t *testing.T) {
