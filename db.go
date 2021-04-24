@@ -45,10 +45,9 @@ type DB struct {
 
 type dbMeta struct {
 	HashSeed uint32
+	unused int
 }
 
-// Open opens or creates a new DB.
-// The DB must be closed after use, by calling Close method.
 func Open(path string, opts *Options) (*DB, error) {
 	opts = opts.copyWithDefaults(path)
 
@@ -81,9 +80,6 @@ func Open(path string, opts *Options) (*DB, error) {
 	}
 
 	index, err := openIndex(opts)
-	if err != nil {
-		return nil, errors.Wrap(err, "opening index")
-	}
 
 	datalog, err := openDatalog(opts)
 	if err != nil {
