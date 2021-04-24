@@ -14,6 +14,11 @@ jobs:
         go-version: ${{ matrix.go-version }}
     - name: Checkout code
       uses: actions/checkout@v2
+    - name: Build GOARCH=386
+      if: ${{ matrix.os != 'macos-latest' }}
+      env:
+        GOARCH: "386"
+      run: go build
     - name: Test
       run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic
     - name: Upload coverage to Codecov
