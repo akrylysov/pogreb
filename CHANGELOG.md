@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.10.1] - 2021-05-01
+### Changed
+- Improve error reporting.
+### Fixed
+- Fix compilation for 32-bit OS.
+
 ## [0.10.0] - 2021-02-09
 ### Added
 - Memory-mapped file access can now be disabled by setting `Options.FileSystem` to `fs.OS`. 
