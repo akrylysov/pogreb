@@ -16,7 +16,7 @@ It aims to provide fast point lookups by indexing keys in an on-disk hash table.
 
 # Design
 
-Two key components of Pogeb are a write-ahead log (WAL) and a hash table index.
+Two key components of Pogreb are a write-ahead log (WAL) and a hash table index.
 The WAL stores key-value pairs on disk in append-only files.
 The on-disk hash table allows constant time lookups from keys to key-value pairs in the WAL.
 
