@@ -301,6 +301,59 @@ func (db *DB) Put(key []byte, value []byte) error {
 	return nil
 }
 
+// HasOrPut sets value if the given key is missing
+func (db *DB) HasOrPut(key, value []byte) (bool, error) {
+	if len(key) > MaxKeyLength {
+		return false, errKeyTooLarge
+	}
+	if len(value) > MaxValueLength {
+		return false, errValueTooLarge
+	}
+	found := false
+	h := db.hash(key)
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	err := db.index.get(h, func(sl slot) (bool, error) {
+		if uint16(len(key)) != sl.keySize {
+			return false, nil
+		}
+		slKey, err := db.datalog.readKey(sl)
+		if err != nil {
+			return true, err
+		}
+		if bytes.Equal(key, slKey) {
+			found = true
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		segID, offset, err := db.datalog.put(key, value)
+		if err != nil {
+			return false, err
+		}
+		sl := slot{
+			hash:      h,
+			segmentID: segID,
+			keySize:   uint16(len(key)),
+			valueSize: uint32(len(value)),
+			offset:    offset,
+		}
+
+		if err := db.put(sl, key); err != nil {
+			return false, err
+		}
+
+		if db.syncWrites {
+			return found, db.sync()
+		}	
+	}
+	return found, nil
+}
+
 func (db *DB) del(h uint32, key []byte, writeWAL bool) error {
 	err := db.index.delete(h, func(sl slot) (b bool, e error) {
 		if uint16(len(key)) != sl.keySize {
