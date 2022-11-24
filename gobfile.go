@@ -6,8 +6,8 @@ import (
 	"github.com/akrylysov/pogreb/fs"
 )
 
-func readGobFile(fsys fs.FileSystem, name string, v interface{}) error {
-	f, err := openFile(fsys, name, false)
+func readGobFile(fsys fs.FileSystem, name string, v interface{}, readOnly bool) error {
+	f, err := openFile(fsys, name, false, readOnly)
 	if err != nil {
 		return err
 	}
@@ -16,8 +16,8 @@ func readGobFile(fsys fs.FileSystem, name string, v interface{}) error {
 	return dec.Decode(v)
 }
 
-func writeGobFile(fsys fs.FileSystem, name string, v interface{}) error {
-	f, err := openFile(fsys, name, true)
+func writeGobFile(fsys fs.FileSystem, name string, v interface{}, readOnly bool) error {
+	f, err := openFile(fsys, name, true, readOnly)
 	if err != nil {
 		return err
 	}
