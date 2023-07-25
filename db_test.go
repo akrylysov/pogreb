@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -59,7 +60,7 @@ func appendFile(path string, data []byte) error {
 		return err
 	}
 	defer f.Close()
-	if _, err = f.Seek(0, os.SEEK_END); err != nil {
+	if _, err = f.Seek(0, io.SeekEnd); err != nil {
 		return err
 	}
 	_, err = f.Write(data)
