@@ -225,6 +225,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 // Has returns true if the DB contains the given key.
 func (db *DB) Has(key []byte) (bool, error) {
 	h := db.hash(key)
+	db.metrics.Gets.Add(1)
 	found := false
 	db.mu.RLock()
 	defer db.mu.RUnlock()
