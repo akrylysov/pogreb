@@ -70,6 +70,17 @@ if err != nil {
 log.Printf("%s", val)
 ```
 
+### Deleting from a database
+
+Use the `DB.Delete()` function to delete a key-value pair:
+
+```go
+err := db.Delete([]byte("testKey"))
+if err != nil {
+	log.Fatal(err)
+}
+```
+
 ### Iterating over items
 
 To iterate over items, use `ItemIterator` returned by `DB.Items()`:
