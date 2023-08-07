@@ -56,20 +56,28 @@ func Open(path string, opts *Options) (*DB, error) {
 		return nil, err
 	}
 
-	// Try to acquire a file lock.
-	lock, acquiredExistingLock, err := createLockFile(opts)
+	var lock fs.LockFile
+	var err error
+	var acquiredExistingLock bool
+	if !opts.ReadOnly {
+		// Try to acquire a file lock.
+		lock, acquiredExistingLock, err = createLockFile(opts)
+	}
 	if err != nil {
 		if err == os.ErrExist {
 			err = errLocked
 		}
 		return nil, errors.Wrap(err, "creating lock file")
 	}
-	clean := lock.Unlock
-	defer func() {
-		if clean != nil {
-			_ = clean()
-		}
-	}()
+	var clean func() error
+	if !opts.ReadOnly {
+		clean = lock.Unlock
+		defer func() {
+			if clean != nil {
+				_ = clean()
+			}
+		}()
+	}
 
 	if acquiredExistingLock {
 		// Lock file already existed, but the process managed to acquire it.
@@ -121,7 +129,9 @@ func Open(path string, opts *Options) (*DB, error) {
 		db.startBackgroundWorker()
 	}
 
-	clean = nil
+	if !opts.ReadOnly {
+		clean = nil
+	}
 	return db, nil
 }
 
@@ -135,12 +145,12 @@ func (db *DB) writeMeta() error {
 	m := dbMeta{
 		HashSeed: db.hashSeed,
 	}
-	return writeGobFile(db.opts.FileSystem, dbMetaName, m)
+	return writeGobFile(db.opts.FileSystem, dbMetaName, m, db.opts.ReadOnly)
 }
 
 func (db *DB) readMeta() error {
 	m := dbMeta{}
-	if err := readGobFile(db.opts.FileSystem, dbMetaName, &m); err != nil {
+	if err := readGobFile(db.opts.FileSystem, dbMetaName, &m, db.opts.ReadOnly); err != nil {
 		return err
 	}
 	db.hashSeed = m.HashSeed

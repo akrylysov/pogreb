@@ -14,10 +14,13 @@ type file struct {
 	size int64
 }
 
-func openFile(fsyst fs.FileSystem, name string, truncate bool) (*file, error) {
-	flag := os.O_CREATE | os.O_RDWR
-	if truncate {
-		flag |= os.O_TRUNC
+func openFile(fsyst fs.FileSystem, name string, truncate bool, readOnly bool) (*file, error) {
+	var flag int = os.O_RDONLY
+	if !readOnly {
+		flag = os.O_CREATE | os.O_RDWR
+		if truncate {
+			flag |= os.O_TRUNC
+		}
 	}
 	fi, err := fsyst.OpenFile(name, flag, os.FileMode(0640))
 	f := &file{}

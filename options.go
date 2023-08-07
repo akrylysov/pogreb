@@ -25,6 +25,9 @@ type Options struct {
 	// Default: fs.OSMMap.
 	FileSystem fs.FileSystem
 
+	// Does DB reside on read-only filesystem?
+	ReadOnly bool
+
 	maxSegmentSize             uint32
 	compactionMinSegmentSize   uint32
 	compactionMinFragmentation float32

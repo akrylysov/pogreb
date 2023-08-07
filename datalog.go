@@ -79,7 +79,7 @@ func parseSegmentName(name string) (uint16, uint64, error) {
 }
 
 func (dl *datalog) openSegment(name string, id uint16, seqID uint64) (*segment, error) {
-	f, err := openFile(dl.opts.FileSystem, name, false)
+	f, err := openFile(dl.opts.FileSystem, name, false, dl.opts.ReadOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (dl *datalog) openSegment(name string, id uint16, seqID uint64) (*segment, 
 	meta := &segmentMeta{}
 	if !f.empty() {
 		metaName := name + metaExt
-		if err := readGobFile(dl.opts.FileSystem, metaName, &meta); err != nil {
+		if err := readGobFile(dl.opts.FileSystem, metaName, &meta, dl.opts.ReadOnly); err != nil {
 			logger.Printf("error reading segment meta %d: %v", id, err)
 			// TODO: rebuild meta?
 		}
@@ -235,7 +235,7 @@ func (dl *datalog) close() error {
 			return err
 		}
 		metaName := seg.name + metaExt
-		if err := writeGobFile(dl.opts.FileSystem, metaName, seg.meta); err != nil {
+		if err := writeGobFile(dl.opts.FileSystem, metaName, seg.meta, dl.opts.ReadOnly); err != nil {
 			return err
 		}
 	}

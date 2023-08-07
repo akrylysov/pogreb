@@ -38,11 +38,11 @@ type indexMeta struct {
 type matchKeyFunc func(slot) (bool, error)
 
 func openIndex(opts *Options) (*index, error) {
-	main, err := openFile(opts.FileSystem, indexMainName, false)
+	main, err := openFile(opts.FileSystem, indexMainName, false, opts.ReadOnly)
 	if err != nil {
 		return nil, errors.Wrap(err, "opening main index")
 	}
-	overflow, err := openFile(opts.FileSystem, indexOverflowName, false)
+	overflow, err := openFile(opts.FileSystem, indexOverflowName, false, opts.ReadOnly)
 	if err != nil {
 		_ = main.Close()
 		return nil, errors.Wrap(err, "opening overflow index")
@@ -76,12 +76,12 @@ func (idx *index) writeMeta() error {
 		SplitBucketIndex:    idx.splitBucketIdx,
 		FreeOverflowBuckets: idx.freeBucketOffs,
 	}
-	return writeGobFile(idx.opts.FileSystem, indexMetaName, m)
+	return writeGobFile(idx.opts.FileSystem, indexMetaName, m, idx.opts.ReadOnly)
 }
 
 func (idx *index) readMeta() error {
 	m := indexMeta{}
-	if err := readGobFile(idx.opts.FileSystem, indexMetaName, &m); err != nil {
+	if err := readGobFile(idx.opts.FileSystem, indexMetaName, &m, idx.opts.ReadOnly); err != nil {
 		return err
 	}
 	idx.level = m.Level
