@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -114,6 +115,37 @@ func TestEmpty(t *testing.T) {
 	db, err = Open(testDBName, opts)
 	assert.Nil(t, err)
 	assert.Nil(t, db.Close())
+}
+
+func TestBatchPut(t *testing.T) {
+	opts := &Options{
+		BackgroundSyncInterval: -1,
+		FileSystem:             testFS,
+		maxSegmentSize:         1024,
+	}
+	db, err := createTestDB(opts)
+	assert.Nil(t, err)
+	defer db.Close()
+
+	count := 1000
+	bucket := 100
+	kvs := [][]byte{}
+	for i := 0; i < count; i++ {
+		key := []byte(strconv.Itoa(i))
+		kvs = append(kvs, key, key)
+		if len(kvs) == bucket {
+			err := db.BatchPut(kvs...)
+			assert.Equal(t, nil, err)
+			kvs = kvs[:0]
+		}
+	}
+
+	for i := 0; i < count; i++ {
+		expected := []byte(strconv.Itoa(i))
+		actual, err := db.Get(expected)
+		assert.Equal(t, nil, err)
+		assert.Equal(t, expected, actual)
+	}
 }
 
 func TestFull(t *testing.T) {
@@ -408,6 +440,32 @@ func BenchmarkPut(b *testing.B) {
 	k := []byte{1}
 	for i := 0; i < b.N; i++ {
 		if err := db.Put(k, k); err != nil {
+			b.Fail()
+		}
+	}
+	assert.Nil(b, db.Close())
+}
+
+func BenchmarkBatchPut(b *testing.B) {
+	db, err := createTestDB(nil)
+	assert.Nil(b, err)
+	b.ResetTimer()
+	k := []byte{1}
+	kvs := [][]byte{}
+	for i := 0; i < b.N; i++ {
+		kvs = append(kvs, k, k)
+		if len(kvs) < 100 {
+			continue
+		}
+
+		if err := db.BatchPut(kvs...); err != nil {
+			b.Fail()
+		}
+		kvs = kvs[:0]
+	}
+
+	if len(kvs) > 0 {
+		if err := db.BatchPut(kvs...); err != nil {
 			b.Fail()
 		}
 	}

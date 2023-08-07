@@ -302,6 +302,48 @@ func (db *DB) Put(key []byte, value []byte) error {
 	return nil
 }
 
+// BatchPut set multiple keys at one time, it updates the value for the existing key.
+func (db *DB) BatchPut(kvs ...[]byte) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	for i := 0; i < len(kvs); i += 2 {
+		key := kvs[i]
+		value := kvs[i+1]
+
+		if len(key) > MaxKeyLength {
+			return errKeyTooLarge
+		}
+		if len(value) > MaxValueLength {
+			return errValueTooLarge
+		}
+		h := db.hash(key)
+		db.metrics.Puts.Add(1)
+
+		segID, offset, err := db.datalog.put(key, value)
+		if err != nil {
+			return err
+		}
+
+		sl := slot{
+			hash:      h,
+			segmentID: segID,
+			keySize:   uint16(len(key)),
+			valueSize: uint32(len(value)),
+			offset:    offset,
+		}
+
+		if err := db.put(sl, key); err != nil {
+			return err
+		}
+	}
+
+	if db.syncWrites {
+		return db.sync()
+	}
+	return nil
+}
+
 func (db *DB) del(h uint32, key []byte, writeWAL bool) error {
 	err := db.index.delete(h, func(sl slot) (b bool, e error) {
 		if uint16(len(key)) != sl.keySize {
