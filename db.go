@@ -1,12 +1,12 @@
 package pogreb
 
 import (
-	"bytes"
 	"context"
 	"math"
 	"os"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/akrylysov/pogreb/fs"
 	"github.com/akrylysov/pogreb/internal/errors"
@@ -27,13 +27,18 @@ const (
 	dbMetaName = "db" + metaExt
 )
 
+// String is a variable byte sequence.
+type String interface {
+	[]byte | string
+}
+
 // DB represents the key-value storage.
 // All DB methods are safe for concurrent use by multiple goroutines.
-type DB struct {
+type DB[K, V String] struct {
 	mu                sync.RWMutex // Allows multiple database readers or a single writer.
 	opts              *Options
 	index             *index
-	datalog           *datalog
+	datalog           *datalog[K, V]
 	lock              fs.LockFile // Prevents opening multiple instances of the same database.
 	hashSeed          uint32
 	metrics           *Metrics
@@ -49,7 +54,7 @@ type dbMeta struct {
 
 // Open opens or creates a new DB.
 // The DB must be closed after use, by calling Close method.
-func Open(path string, opts *Options) (*DB, error) {
+func Open[K, V String](path string, opts *Options) (*DB[K, V], error) {
 	opts = opts.copyWithDefaults(path)
 
 	if err := os.MkdirAll(path, 0755); err != nil {
@@ -85,12 +90,12 @@ func Open(path string, opts *Options) (*DB, error) {
 		return nil, errors.Wrap(err, "opening index")
 	}
 
-	datalog, err := openDatalog(opts)
+	datalog, err := openDatalog[K, V](opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "opening datalog")
 	}
 
-	db := &DB{
+	db := &DB[K, V]{
 		opts:       opts,
 		index:      index,
 		datalog:    datalog,
@@ -125,30 +130,26 @@ func Open(path string, opts *Options) (*DB, error) {
 	return db, nil
 }
 
-func cloneBytes(src []byte) []byte {
+func typedCopy[T String](src []byte) T {
 	dst := make([]byte, len(src))
 	copy(dst, src)
-	return dst
+	return *(*T)(unsafe.Pointer(&dst))
 }
 
-func (db *DB) writeMeta() error {
+func (db *DB[K, V]) writeMeta() error {
 	m := dbMeta{
 		HashSeed: db.hashSeed,
 	}
 	return writeGobFile(db.opts.FileSystem, dbMetaName, m)
 }
 
-func (db *DB) readMeta() error {
+func (db *DB[K, V]) readMeta() error {
 	m := dbMeta{}
 	if err := readGobFile(db.opts.FileSystem, dbMetaName, &m); err != nil {
 		return err
 	}
 	db.hashSeed = m.HashSeed
 	return nil
-}
-
-func (db *DB) hash(data []byte) uint32 {
-	return hash.Sum32WithSeed(data, db.hashSeed)
 }
 
 // newNullableTicker is a wrapper around time.NewTicker that allows creating a nil ticker.
@@ -161,7 +162,7 @@ func newNullableTicker(d time.Duration) (<-chan time.Time, func()) {
 	return nil, func() {}
 }
 
-func (db *DB) startBackgroundWorker() {
+func (db *DB[K, V]) startBackgroundWorker() {
 	ctx, cancel := context.WithCancel(context.Background())
 	db.cancelBgWorker = cancel
 	db.closeWg.Add(1)
@@ -195,12 +196,12 @@ func (db *DB) startBackgroundWorker() {
 }
 
 // Get returns the value for the given key stored in the DB or nil if the key doesn't exist.
-func (db *DB) Get(key []byte) ([]byte, error) {
-	h := db.hash(key)
+func (db *DB[K, V]) Get(key K) (V, error) {
+	h := hash.Sum32WithSeed(key, db.hashSeed)
 	db.metrics.Gets.Add(1)
 	db.mu.RLock()
 	defer db.mu.RUnlock()
-	var retValue []byte
+	var hit V
 	err := db.index.get(h, func(sl slot) (bool, error) {
 		if uint16(len(key)) != sl.keySize {
 			return false, nil
@@ -209,22 +210,23 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		if err != nil {
 			return true, err
 		}
-		if bytes.Equal(key, slKey) {
-			retValue = cloneBytes(value)
+		if string(key) == string(slKey) {
+			hit = typedCopy[V](value)
 			return true, nil
 		}
 		db.metrics.HashCollisions.Add(1)
 		return false, nil
 	})
 	if err != nil {
-		return nil, err
+		var zero V
+		return zero, err
 	}
-	return retValue, nil
+	return hit, nil
 }
 
 // Has returns true if the DB contains the given key.
-func (db *DB) Has(key []byte) (bool, error) {
-	h := db.hash(key)
+func (db *DB[K, V]) Has(key K) (bool, error) {
+	h := hash.Sum32WithSeed(key, db.hashSeed)
 	db.metrics.Gets.Add(1)
 	found := false
 	db.mu.RLock()
@@ -237,7 +239,7 @@ func (db *DB) Has(key []byte) (bool, error) {
 		if err != nil {
 			return true, err
 		}
-		if bytes.Equal(key, slKey) {
+		if string(key) == string(slKey) {
 			found = true
 			return true, nil
 		}
@@ -249,7 +251,7 @@ func (db *DB) Has(key []byte) (bool, error) {
 	return found, nil
 }
 
-func (db *DB) put(sl slot, key []byte) error {
+func (db *DB[K, V]) put(sl slot, key K) error {
 	return db.index.put(sl, func(cursl slot) (bool, error) {
 		if uint16(len(key)) != cursl.keySize {
 			return false, nil
@@ -258,7 +260,7 @@ func (db *DB) put(sl slot, key []byte) error {
 		if err != nil {
 			return true, err
 		}
-		if bytes.Equal(key, slKey) {
+		if string(key) == string(slKey) {
 			db.datalog.trackDel(cursl) // Overwriting existing key.
 			return true, nil
 		}
@@ -267,14 +269,14 @@ func (db *DB) put(sl slot, key []byte) error {
 }
 
 // Put sets the value for the given key. It updates the value for the existing key.
-func (db *DB) Put(key []byte, value []byte) error {
+func (db *DB[K, V]) Put(key K, value V) error {
 	if len(key) > MaxKeyLength {
 		return errKeyTooLarge
 	}
 	if len(value) > MaxValueLength {
 		return errValueTooLarge
 	}
-	h := db.hash(key)
+	h := hash.Sum32WithSeed(key, db.hashSeed)
 	db.metrics.Puts.Add(1)
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -302,7 +304,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 	return nil
 }
 
-func (db *DB) del(h uint32, key []byte, writeWAL bool) error {
+func (db *DB[K, V]) del(h uint32, key K, writeWAL bool) error {
 	err := db.index.delete(h, func(sl slot) (b bool, e error) {
 		if uint16(len(key)) != sl.keySize {
 			return false, nil
@@ -311,7 +313,7 @@ func (db *DB) del(h uint32, key []byte, writeWAL bool) error {
 		if err != nil {
 			return true, err
 		}
-		if bytes.Equal(key, slKey) {
+		if string(key) == string(slKey) {
 			db.datalog.trackDel(sl)
 			var err error
 			if writeWAL {
@@ -325,8 +327,8 @@ func (db *DB) del(h uint32, key []byte, writeWAL bool) error {
 }
 
 // Delete deletes the given key from the DB.
-func (db *DB) Delete(key []byte) error {
-	h := db.hash(key)
+func (db *DB[K, V]) Delete(key K) error {
+	h := hash.Sum32WithSeed(key, db.hashSeed)
 	db.metrics.Dels.Add(1)
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -340,7 +342,7 @@ func (db *DB) Delete(key []byte) error {
 }
 
 // Close closes the DB.
-func (db *DB) Close() error {
+func (db *DB[K, V]) Close() error {
 	if db.cancelBgWorker != nil {
 		db.cancelBgWorker()
 	}
@@ -362,36 +364,36 @@ func (db *DB) Close() error {
 	return nil
 }
 
-func (db *DB) sync() error {
+func (db *DB[K, V]) sync() error {
 	return db.datalog.sync()
 }
 
 // Items returns a new ItemIterator.
-func (db *DB) Items() *ItemIterator {
-	return &ItemIterator{db: db}
+func (db *DB[K, V]) Items() *ItemIterator[K, V] {
+	return &ItemIterator[K, V]{db: db}
 }
 
 // Sync commits the contents of the database to the backing FileSystem.
-func (db *DB) Sync() error {
+func (db *DB[K, V]) Sync() error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	return db.sync()
 }
 
 // Count returns the number of keys in the DB.
-func (db *DB) Count() uint32 {
+func (db *DB[K, V]) Count() uint32 {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 	return db.index.count()
 }
 
 // Metrics returns the DB metrics.
-func (db *DB) Metrics() *Metrics {
+func (db *DB[K, V]) Metrics() *Metrics {
 	return db.metrics
 }
 
 // FileSize returns the total size of the disk storage used by the DB.
-func (db *DB) FileSize() (int64, error) {
+func (db *DB[K, V]) FileSize() (int64, error) {
 	var size int64
 	files, err := db.opts.FileSystem.ReadDir(".")
 	if err != nil {

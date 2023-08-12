@@ -87,7 +87,7 @@ func TestHeaderSize(t *testing.T) {
 	}
 }
 
-func createTestDB(opts *Options) (*DB, error) {
+func createTestDB(opts *Options) (*DB[[]byte, []byte], error) {
 	if opts == nil {
 		opts = &Options{FileSystem: testFS}
 	} else {
@@ -103,7 +103,7 @@ func createTestDB(opts *Options) (*DB, error) {
 	for _, file := range files {
 		_ = testFS.Remove(filepath.Join(path, file.Name()))
 	}
-	return Open(path, opts)
+	return Open[[]byte, []byte](path, opts)
 }
 
 func TestEmpty(t *testing.T) {
@@ -111,7 +111,7 @@ func TestEmpty(t *testing.T) {
 	db, err := createTestDB(opts)
 	assert.Nil(t, err)
 	assert.Nil(t, db.Close())
-	db, err = Open(testDBName, opts)
+	db, err = Open[[]byte, []byte](testDBName, opts)
 	assert.Nil(t, err)
 	assert.Nil(t, db.Close())
 }
@@ -178,7 +178,7 @@ func TestFull(t *testing.T) {
 	verifyKeysAndClose(0)
 
 	// Open and check again
-	db, err = Open(testDBName, opts)
+	db, err = Open[[]byte, []byte](testDBName, opts)
 	assert.Nil(t, err)
 	verifyKeysAndClose(0)
 
@@ -188,14 +188,14 @@ func TestFull(t *testing.T) {
 	assert.Nil(t, testFS.Remove(filepath.Join(testDBName, indexMetaName)))
 
 	// Open and check again
-	db, err = Open(testDBName, opts)
+	db, err = Open[[]byte, []byte](testDBName, opts)
 	assert.Nil(t, err)
 	verifyKeysAndClose(0)
 
 	assert.Equal(t, expectedSegMetas, db.datalog.segmentMetas())
 
 	// Update all items
-	db, err = Open(testDBName, opts)
+	db, err = Open[[]byte, []byte](testDBName, opts)
 	assert.Nil(t, err)
 	for i = 0; i < n; i++ {
 		assert.Nil(t, db.Put([]byte{i}, []byte{i + 6}))
@@ -203,7 +203,7 @@ func TestFull(t *testing.T) {
 	verifyKeysAndClose(6)
 
 	// Delete all items
-	db, err = Open(testDBName, &Options{BackgroundSyncInterval: time.Millisecond})
+	db, err = Open[[]byte, []byte](testDBName, &Options{BackgroundSyncInterval: time.Millisecond})
 	assert.Nil(t, err)
 	for i = 0; i < n; i++ {
 		assert.Nil(t, db.Delete([]byte{i}))
@@ -223,7 +223,7 @@ func TestLock(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Opening already opened database returns an error.
-	db2, err2 := Open(testDBName, opts)
+	db2, err2 := Open[string, string](testDBName, opts)
 	assert.Nil(t, db2)
 	assert.NotNil(t, err2)
 
@@ -304,7 +304,7 @@ func TestCorruptedIndex(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Nil(t, f.Close())
 
-	db, err = Open(testDBName, opts)
+	db, err = Open[[]byte, []byte](testDBName, opts)
 	assert.Nil(t, db)
 	assert.NotNil(t, err)
 }

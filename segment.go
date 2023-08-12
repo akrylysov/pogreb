@@ -61,7 +61,7 @@ func encodedRecordSize(kvSize uint32) uint32 {
 	return 2 + 4 + kvSize + 4
 }
 
-func encodeRecord(key []byte, value []byte, rt recordType) []byte {
+func encodeRecord[K, V String](key K, value V, rt recordType) []byte {
 	size := encodedRecordSize(uint32(len(key) + len(value)))
 	data := make([]byte, size)
 	binary.LittleEndian.PutUint16(data[:2], uint16(len(key)))
@@ -79,12 +79,12 @@ func encodeRecord(key []byte, value []byte, rt recordType) []byte {
 	return data
 }
 
-func encodePutRecord(key []byte, value []byte) []byte {
+func encodePutRecord[K, V String](key K, value V) []byte {
 	return encodeRecord(key, value, recordTypePut)
 }
 
-func encodeDeleteRecord(key []byte) []byte {
-	return encodeRecord(key, nil, recordTypeDelete)
+func encodeDeleteRecord[K String](key K) []byte {
+	return encodeRecord(key, []byte(nil), recordTypeDelete)
 }
 
 // segmentIterator iterates over segment records.

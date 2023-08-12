@@ -16,7 +16,7 @@ func fileExists(name string) bool {
 	return !os.IsNotExist(err)
 }
 
-func countSegments(t *testing.T, db *DB) int {
+func countSegments[K, V String](t *testing.T, db *DB[K, V]) int {
 	t.Helper()
 	db.mu.RLock()
 	defer db.mu.RUnlock()
@@ -31,7 +31,7 @@ func countSegments(t *testing.T, db *DB) int {
 }
 
 func TestCompaction(t *testing.T) {
-	run := func(name string, f func(t *testing.T, db *DB)) bool {
+	run := func(name string, f func(t *testing.T, db *DB[[]byte, []byte])) bool {
 		opts := &Options{
 			maxSegmentSize:             1024,
 			compactionMinSegmentSize:   520,
@@ -45,7 +45,7 @@ func TestCompaction(t *testing.T) {
 		})
 	}
 
-	run("empty", func(t *testing.T, db *DB) {
+	run("empty", func(t *testing.T, db *DB[[]byte, []byte]) {
 		assert.Equal(t, 1, countSegments(t, db))
 		cr, err := db.Compact()
 		assert.Nil(t, err)
@@ -56,7 +56,7 @@ func TestCompaction(t *testing.T) {
 	// A single segment file can fit 42 items (12 bytes per item, 1 byte key, 1 byte value).
 	const maxItemsPerFile byte = 42
 
-	run("compact only segment", func(t *testing.T, db *DB) {
+	run("compact only segment", func(t *testing.T, db *DB[[]byte, []byte]) {
 		// Write items and then overwrite them on the second iteration.
 		for j := 0; j < 10; j++ {
 			assert.Nil(t, db.Put([]byte{0}, []byte{0}))
@@ -74,7 +74,7 @@ func TestCompaction(t *testing.T) {
 		assert.Equal(t, false, fileExists(filepath.Join(testDBName, segmentMetaName(0, 1))))
 	})
 
-	run("compact entire segment", func(t *testing.T, db *DB) {
+	run("compact entire segment", func(t *testing.T, db *DB[[]byte, []byte]) {
 		// Write items and then overwrite them on the second iteration.
 		for i := 0; i < 2; i++ {
 			for j := byte(0); j < maxItemsPerFile; j++ {
@@ -92,7 +92,7 @@ func TestCompaction(t *testing.T) {
 		assert.Equal(t, &segmentMeta{PutRecords: 42}, db.datalog.segments[1].meta)
 	})
 
-	run("compact part of segment", func(t *testing.T, db *DB) {
+	run("compact part of segment", func(t *testing.T, db *DB[[]byte, []byte]) {
 		for j := byte(0); j < maxItemsPerFile; j++ {
 			assert.Nil(t, db.Put([]byte{j}, []byte{j}))
 		}
@@ -110,7 +110,7 @@ func TestCompaction(t *testing.T) {
 		assert.Equal(t, &segmentMeta{PutRecords: 42}, db.datalog.segments[1].meta)
 	})
 
-	run("compact multiple segments", func(t *testing.T, db *DB) {
+	run("compact multiple segments", func(t *testing.T, db *DB[[]byte, []byte]) {
 		for i := 0; i < 4; i++ {
 			for j := byte(0); j < maxItemsPerFile; j++ {
 				assert.Nil(t, db.Put([]byte{j}, []byte{j}))
@@ -123,7 +123,7 @@ func TestCompaction(t *testing.T) {
 		assert.Equal(t, 1, countSegments(t, db))
 	})
 
-	run("zero deleted bytes", func(t *testing.T, db *DB) {
+	run("zero deleted bytes", func(t *testing.T, db *DB[[]byte, []byte]) {
 		for i := byte(0); i < maxItemsPerFile; i++ {
 			assert.Nil(t, db.Put([]byte{i}, []byte{i}))
 		}
@@ -136,7 +136,7 @@ func TestCompaction(t *testing.T) {
 		assert.Equal(t, &segmentMeta{PutRecords: 42}, db.datalog.segments[0].meta)
 	})
 
-	run("below threshold", func(t *testing.T, db *DB) {
+	run("below threshold", func(t *testing.T, db *DB[[]byte, []byte]) {
 		for j := byte(0); j < maxItemsPerFile; j++ {
 			assert.Nil(t, db.Put([]byte{j}, []byte{j}))
 		}
@@ -150,7 +150,7 @@ func TestCompaction(t *testing.T) {
 		assert.Equal(t, 2, countSegments(t, db))
 	})
 
-	run("above threshold", func(t *testing.T, db *DB) {
+	run("above threshold", func(t *testing.T, db *DB[[]byte, []byte]) {
 		for j := byte(0); j < maxItemsPerFile; j++ {
 			assert.Nil(t, db.Put([]byte{j}, []byte{j}))
 		}
@@ -165,7 +165,7 @@ func TestCompaction(t *testing.T) {
 		assert.Equal(t, 1, countSegments(t, db))
 	})
 
-	run("compact single segment in the middle: puts", func(t *testing.T, db *DB) {
+	run("compact single segment in the middle: puts", func(t *testing.T, db *DB[[]byte, []byte]) {
 		// Write two segments.
 		for j := byte(0); j < maxItemsPerFile*2; j++ {
 			assert.Nil(t, db.Put([]byte{j}, []byte{j}))
@@ -181,7 +181,7 @@ func TestCompaction(t *testing.T) {
 		assert.Equal(t, 2, countSegments(t, db))
 	})
 
-	run("compact single segment in the middle: deletes", func(t *testing.T, db *DB) {
+	run("compact single segment in the middle: deletes", func(t *testing.T, db *DB[[]byte, []byte]) {
 		for j := byte(0); j < (maxItemsPerFile*2)-1; j++ {
 			assert.Nil(t, db.Put([]byte{j}, []byte{j}))
 		}
@@ -200,7 +200,7 @@ func TestCompaction(t *testing.T) {
 		assert.Equal(t, 2, countSegments(t, db))
 	})
 
-	run("delete and compact all segments", func(t *testing.T, db *DB) {
+	run("delete and compact all segments", func(t *testing.T, db *DB[[]byte, []byte]) {
 		// Write items.
 		for i := byte(0); i < maxItemsPerFile; i++ {
 			assert.Nil(t, db.Put([]byte{i}, []byte{i}))
@@ -220,7 +220,7 @@ func TestCompaction(t *testing.T) {
 		assert.Nil(t, db.datalog.segments[1])
 	})
 
-	run("busy error", func(t *testing.T, db *DB) {
+	run("busy error", func(t *testing.T, db *DB[[]byte, []byte]) {
 		wg := sync.WaitGroup{}
 		wg.Add(1)
 		db.mu.Lock()

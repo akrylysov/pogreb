@@ -4,12 +4,13 @@ import (
 	"sync/atomic"
 
 	"github.com/akrylysov/pogreb/internal/errors"
+	"github.com/akrylysov/pogreb/internal/hash"
 )
 
 // promoteRecord writes the record to the current segment if the index still points to the record.
 // Otherwise it discards the record.
-func (db *DB) promoteRecord(rec record) (bool, error) {
-	hash := db.hash(rec.key)
+func (db *DB[K, V]) promoteRecord(rec record) (bool, error) {
+	hash := hash.Sum32WithSeed(rec.key, db.hashSeed)
 	it := db.index.newBucketIterator(db.index.bucketIndex(hash))
 	for {
 		b, err := it.next()
@@ -55,7 +56,7 @@ type CompactionResult struct {
 	ReclaimedBytes    int
 }
 
-func (db *DB) compact(sourceSeg *segment) (CompactionResult, error) {
+func (db *DB[K, V]) compact(sourceSeg *segment) (CompactionResult, error) {
 	cr := CompactionResult{}
 
 	db.mu.Lock()
@@ -102,7 +103,7 @@ func (db *DB) compact(sourceSeg *segment) (CompactionResult, error) {
 }
 
 // pickForCompaction returns segments eligible for compaction.
-func (db *DB) pickForCompaction() []*segment {
+func (db *DB[K, V]) pickForCompaction() []*segment {
 	segments := db.datalog.segmentsBySequenceID()
 	var picked []*segment
 	for i := len(segments) - 1; i >= 0; i-- {
@@ -131,7 +132,7 @@ func (db *DB) pickForCompaction() []*segment {
 
 // Compact compacts the DB. Deleted and overwritten items are discarded.
 // Returns an error if compaction is already in progress.
-func (db *DB) Compact() (CompactionResult, error) {
+func (db *DB[K, V]) Compact() (CompactionResult, error) {
 	cr := CompactionResult{}
 
 	// Run only a single compaction at a time.
