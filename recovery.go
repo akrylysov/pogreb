@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/akrylysov/pogreb/fs"
+	"github.com/akrylysov/pogreb/internal/hash"
 )
 
 const (
@@ -108,7 +109,7 @@ func (it *recoveryIterator) next() (record, error) {
 	}
 }
 
-func (db *DB) recover() error {
+func (db *DB[K, V]) recover() error {
 	logger.Println("started recovery")
 	logger.Println("rebuilding index...")
 
@@ -123,7 +124,7 @@ func (db *DB) recover() error {
 			return err
 		}
 
-		h := db.hash(rec.key)
+		h := hash.Sum32WithSeed(rec.key, db.hashSeed)
 		meta := db.datalog.segments[rec.segmentID].meta
 		if rec.rtype == recordTypePut {
 			sl := slot{
@@ -133,12 +134,12 @@ func (db *DB) recover() error {
 				valueSize: uint32(len(rec.value)),
 				offset:    rec.offset,
 			}
-			if err := db.put(sl, rec.key); err != nil {
+			if err := db.put(sl, (K)(rec.key)); err != nil {
 				return err
 			}
 			meta.PutRecords++
 		} else {
-			if err := db.del(h, rec.key, false); err != nil {
+			if err := db.del(h, (K)(rec.key), false); err != nil {
 				return err
 			}
 			meta.DeleteRecords++

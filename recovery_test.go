@@ -84,12 +84,12 @@ func TestRecovery(t *testing.T) {
 
 			assert.Nil(t, testCase.fn())
 
-			db, err = Open(testDBName, opts)
+			db, err = Open[[]byte, []byte](testDBName, opts)
 			assert.Nil(t, err)
 			assert.Equal(t, uint32(128), db.Count())
 			assert.Nil(t, db.Close())
 
-			db, err = Open(testDBName, opts)
+			db, err = Open[[]byte, []byte](testDBName, opts)
 			assert.Nil(t, err)
 			assert.Equal(t, uint32(128), db.Count())
 			for i = 0; i < 128; i++ {
@@ -115,7 +115,7 @@ func TestRecoveryDelete(t *testing.T) {
 	// Simulate crash.
 	assert.Nil(t, touchFile(testFS, filepath.Join(testDBName, lockName)))
 
-	db, err = Open(testDBName, opts)
+	db, err = Open[[]byte, []byte](testDBName, opts)
 	assert.Nil(t, err)
 
 	assert.Equal(t, uint32(1), db.Count())
@@ -180,7 +180,7 @@ func TestRecoveryCompaction(t *testing.T) {
 	// Simulate crash.
 	assert.Nil(t, touchFile(testFS, filepath.Join(testDBName, lockName)))
 
-	db, err = Open(testDBName, opts)
+	db, err = Open[[]byte, []byte](testDBName, opts)
 	assert.Nil(t, err)
 
 	assert.Equal(t, uint32(2), db.Count())

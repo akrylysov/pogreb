@@ -17,20 +17,20 @@ const (
 )
 
 // datalog is a write-ahead log.
-type datalog struct {
+type datalog[K, V String] struct {
 	opts          *Options
 	curSeg        *segment
 	segments      [maxSegments]*segment
 	maxSequenceID uint64
 }
 
-func openDatalog(opts *Options) (*datalog, error) {
+func openDatalog[K, V String](opts *Options) (*datalog[K, V], error) {
 	files, err := opts.FileSystem.ReadDir(".")
 	if err != nil {
 		return nil, err
 	}
 
-	dl := &datalog{
+	dl := &datalog[K, V]{
 		opts: opts,
 	}
 
@@ -78,7 +78,7 @@ func parseSegmentName(name string) (uint16, uint64, error) {
 	return uint16(id), seqID, nil
 }
 
-func (dl *datalog) openSegment(name string, id uint16, seqID uint64) (*segment, error) {
+func (dl *datalog[K, V]) openSegment(name string, id uint16, seqID uint64) (*segment, error) {
 	f, err := openFile(dl.opts.FileSystem, name, false)
 	if err != nil {
 		return nil, err
@@ -104,7 +104,7 @@ func (dl *datalog) openSegment(name string, id uint16, seqID uint64) (*segment, 
 	return seg, nil
 }
 
-func (dl *datalog) nextWritableSegmentID() (uint16, uint64, error) {
+func (dl *datalog[K, V]) nextWritableSegmentID() (uint16, uint64, error) {
 	for id, seg := range dl.segments {
 		// Pick empty segment.
 		if seg == nil {
@@ -115,7 +115,7 @@ func (dl *datalog) nextWritableSegmentID() (uint16, uint64, error) {
 	return 0, 0, fmt.Errorf("number of segments exceeds %d", maxSegments)
 }
 
-func (dl *datalog) swapSegment() error {
+func (dl *datalog[K, V]) swapSegment() error {
 	// Pick unfilled segment.
 	for _, seg := range dl.segments {
 		if seg != nil && !seg.meta.Full {
@@ -142,7 +142,7 @@ func (dl *datalog) swapSegment() error {
 	return nil
 }
 
-func (dl *datalog) removeSegment(seg *segment) error {
+func (dl *datalog[K, V]) removeSegment(seg *segment) error {
 	dl.segments[seg.id] = nil
 
 	if err := seg.Close(); err != nil {
@@ -163,7 +163,7 @@ func (dl *datalog) removeSegment(seg *segment) error {
 	return nil
 }
 
-func (dl *datalog) readKeyValue(sl slot) ([]byte, []byte, error) {
+func (dl *datalog[K, V]) readKeyValue(sl slot) ([]byte, []byte, error) {
 	off := int64(sl.offset) + 6 // Skip key size and value size.
 	seg := dl.segments[sl.segmentID]
 	keyValue, err := seg.Slice(off, off+int64(sl.kvSize()))
@@ -173,20 +173,20 @@ func (dl *datalog) readKeyValue(sl slot) ([]byte, []byte, error) {
 	return keyValue[:sl.keySize], keyValue[sl.keySize:], nil
 }
 
-func (dl *datalog) readKey(sl slot) ([]byte, error) {
+func (dl *datalog[K, V]) readKey(sl slot) ([]byte, error) {
 	off := int64(sl.offset) + 6
 	seg := dl.segments[sl.segmentID]
 	return seg.Slice(off, off+int64(sl.keySize))
 }
 
 // trackDel updates segment's metadata for deleted or overwritten items.
-func (dl *datalog) trackDel(sl slot) {
+func (dl *datalog[K, V]) trackDel(sl slot) {
 	meta := dl.segments[sl.segmentID].meta
 	meta.DeletedKeys++
 	meta.DeletedBytes += encodedRecordSize(sl.kvSize())
 }
 
-func (dl *datalog) del(key []byte) error {
+func (dl *datalog[K, V]) del(key K) error {
 	rec := encodeDeleteRecord(key)
 	_, _, err := dl.writeRecord(rec, recordTypeDelete)
 	if err != nil {
@@ -197,7 +197,7 @@ func (dl *datalog) del(key []byte) error {
 	return nil
 }
 
-func (dl *datalog) writeRecord(data []byte, rt recordType) (uint16, uint32, error) {
+func (dl *datalog[K, V]) writeRecord(data []byte, rt recordType) (uint16, uint32, error) {
 	if dl.curSeg.meta.Full || dl.curSeg.size+int64(len(data)) > int64(dl.opts.maxSegmentSize) {
 		// Current segment is full, create a new one.
 		dl.curSeg.meta.Full = true
@@ -218,15 +218,15 @@ func (dl *datalog) writeRecord(data []byte, rt recordType) (uint16, uint32, erro
 	return dl.curSeg.id, uint32(off), nil
 }
 
-func (dl *datalog) put(key []byte, value []byte) (uint16, uint32, error) {
+func (dl *datalog[K, V]) put(key K, value V) (uint16, uint32, error) {
 	return dl.writeRecord(encodePutRecord(key, value), recordTypePut)
 }
 
-func (dl *datalog) sync() error {
+func (dl *datalog[K, V]) sync() error {
 	return dl.curSeg.Sync()
 }
 
-func (dl *datalog) close() error {
+func (dl *datalog[K, V]) close() error {
 	for _, seg := range dl.segments {
 		if seg == nil {
 			continue
@@ -243,7 +243,7 @@ func (dl *datalog) close() error {
 }
 
 // segmentsBySequenceID returns segments ordered from oldest to newest.
-func (dl *datalog) segmentsBySequenceID() []*segment {
+func (dl *datalog[K, V]) segmentsBySequenceID() []*segment {
 	var segments []*segment
 
 	for _, seg := range dl.segments {

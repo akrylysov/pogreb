@@ -6,7 +6,7 @@ import (
 	"github.com/akrylysov/pogreb/internal/assert"
 )
 
-func (dl *datalog) segmentMetas() []segmentMeta {
+func (dl *datalog[K, V]) segmentMetas() []segmentMeta {
 	var metas []segmentMeta
 	for _, seg := range dl.segmentsBySequenceID() {
 		metas = append(metas, *seg.meta)

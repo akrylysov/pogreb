@@ -10,7 +10,7 @@ const (
 )
 
 // Sum32WithSeed is a port of MurmurHash3_x86_32 function.
-func Sum32WithSeed(data []byte, seed uint32) uint32 {
+func Sum32WithSeed[String []byte | string](data String, seed uint32) uint32 {
 	h1 := seed
 	dlen := len(data)
 

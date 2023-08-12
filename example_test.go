@@ -7,7 +7,7 @@ import (
 )
 
 func Example() {
-	db, err := pogreb.Open("pogreb.test", nil)
+	db, err := pogreb.Open[string, string]("pogreb.test", nil)
 	if err != nil {
 		log.Fatal(err)
 		return
@@ -15,12 +15,12 @@ func Example() {
 	defer db.Close()
 
 	// Insert a new key-value pair.
-	if err := db.Put([]byte("testKey"), []byte("testValue")); err != nil {
+	if err := db.Put("testKey", "testValue"); err != nil {
 		log.Fatal(err)
 	}
 
 	// Retrieve the inserted value.
-	val, err := db.Get([]byte("testKey"))
+	val, err := db.Get("testKey")
 	if err != nil {
 		log.Fatal(err)
 	}

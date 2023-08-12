@@ -8,21 +8,21 @@ import (
 // ErrIterationDone is returned by ItemIterator.Next calls when there are no more items to return.
 var ErrIterationDone = errors.New("no more items in iterator")
 
-type item struct {
-	key   []byte
-	value []byte
+type item[K, V String] struct {
+	key   K
+	value V
 }
 
 // ItemIterator is an iterator over DB key-value pairs. It iterates the items in an unspecified order.
-type ItemIterator struct {
-	db            *DB
+type ItemIterator[K, V String] struct {
+	db            *DB[K, V]
 	nextBucketIdx uint32
-	queue         []item
+	queue         []item[K, V]
 	mu            sync.Mutex
 }
 
 // fetchItems adds items to the iterator queue from a bucket located at nextBucketIdx.
-func (it *ItemIterator) fetchItems(nextBucketIdx uint32) error {
+func (it *ItemIterator[K, V]) fetchItems(nextBucketIdx uint32) error {
 	bit := it.db.index.newBucketIterator(nextBucketIdx)
 	for {
 		b, err := bit.next()
@@ -42,15 +42,16 @@ func (it *ItemIterator) fetchItems(nextBucketIdx uint32) error {
 			if err != nil {
 				return err
 			}
-			key = cloneBytes(key)
-			value = cloneBytes(value)
-			it.queue = append(it.queue, item{key: key, value: value})
+			it.queue = append(it.queue, item[K, V]{
+				key:   typedCopy[K](key),
+				value: typedCopy[V](value),
+			})
 		}
 	}
 }
 
 // Next returns the next key-value pair if available, otherwise it returns ErrIterationDone error.
-func (it *ItemIterator) Next() ([]byte, []byte, error) {
+func (it *ItemIterator[K, V]) Next() (K, V, error) {
 	it.mu.Lock()
 	defer it.mu.Unlock()
 
@@ -60,7 +61,9 @@ func (it *ItemIterator) Next() ([]byte, []byte, error) {
 	// The iterator queue is empty and we have more buckets to check.
 	for len(it.queue) == 0 && it.nextBucketIdx < it.db.index.numBuckets {
 		if err := it.fetchItems(it.nextBucketIdx); err != nil {
-			return nil, nil, err
+			var zeroK K
+			var zeroV V
+			return zeroK, zeroV, err
 		}
 		it.nextBucketIdx++
 	}
@@ -71,5 +74,7 @@ func (it *ItemIterator) Next() ([]byte, []byte, error) {
 		return item.key, item.value, nil
 	}
 
-	return nil, nil, ErrIterationDone
+	var zeroK K
+	var zeroV V
+	return zeroK, zeroV, ErrIterationDone
 }
