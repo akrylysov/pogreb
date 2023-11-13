@@ -38,11 +38,11 @@ type indexMeta struct {
 type matchKeyFunc func(slot) (bool, error)
 
 func openIndex(opts *Options) (*index, error) {
-	main, err := openFile(opts.FileSystem, indexMainName, false)
+	main, err := openFile(opts.FileSystem, indexMainName, openFileFlags{})
 	if err != nil {
 		return nil, errors.Wrap(err, "opening main index")
 	}
-	overflow, err := openFile(opts.FileSystem, indexOverflowName, false)
+	overflow, err := openFile(opts.FileSystem, indexOverflowName, openFileFlags{})
 	if err != nil {
 		_ = main.Close()
 		return nil, errors.Wrap(err, "opening overflow index")

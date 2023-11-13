@@ -79,7 +79,7 @@ func parseSegmentName(name string) (uint16, uint64, error) {
 }
 
 func (dl *datalog) openSegment(name string, id uint16, seqID uint64) (*segment, error) {
-	f, err := openFile(dl.opts.FileSystem, name, false)
+	f, err := openFile(dl.opts.FileSystem, name, openFileFlags{})
 	if err != nil {
 		return nil, err
 	}

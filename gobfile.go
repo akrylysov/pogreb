@@ -7,7 +7,7 @@ import (
 )
 
 func readGobFile(fsys fs.FileSystem, name string, v interface{}) error {
-	f, err := openFile(fsys, name, false)
+	f, err := openFile(fsys, name, openFileFlags{readOnly: true})
 	if err != nil {
 		return err
 	}
@@ -17,7 +17,7 @@ func readGobFile(fsys fs.FileSystem, name string, v interface{}) error {
 }
 
 func writeGobFile(fsys fs.FileSystem, name string, v interface{}) error {
-	f, err := openFile(fsys, name, true)
+	f, err := openFile(fsys, name, openFileFlags{truncate: true})
 	if err != nil {
 		return err
 	}
