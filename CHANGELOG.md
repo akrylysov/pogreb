@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.10.2] - 2023-12-10
+### Fixed
+- Fix an edge case causing recovery to fail.
+
 ## [0.10.1] - 2021-05-01
 ### Changed
 - Improve error reporting.
