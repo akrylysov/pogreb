@@ -186,3 +186,7 @@ After the compaction is successfully finished, the compacted segment files are r
 In the event of a crash caused by a power loss or an operating system failure, Pogreb discards the index and replays the
 WAL building a new index from scratch.
 Segments are iterated from the oldest to the newest and items are inserted into the index.
+
+# Limitations
+
+The design choices made to optimize for point lookups bring limitations for other potential use-cases. For example, using a hash table for indexing makes range scans impossible. Additionally, having a single hash table shared across all WAL segments makes the recovery process require rebuilding the entire index, which may be impractical for large databases.
