@@ -117,6 +117,18 @@ func TestEmpty(t *testing.T) {
 }
 
 func TestFull(t *testing.T) {
+	fullTest(t, func(db *DB, key []byte) ([]byte, error) {
+		return db.Get(key)
+	})
+	var buf []byte
+	fullTest(t, func(db *DB, key []byte) ([]byte, error) {
+		var err error
+		buf, err = db.GetAppend(key, buf[:0])
+		return buf, err
+	})
+}
+
+func fullTest(t *testing.T, getFunc func(db *DB, key []byte) ([]byte, error)) {
 	opts := &Options{
 		BackgroundSyncInterval: -1,
 		FileSystem:             testFS,
@@ -165,7 +177,7 @@ func TestFull(t *testing.T) {
 			if has, err := db.Has([]byte{0, i}); has || err != nil {
 				t.Fatal(has, err)
 			}
-			v, err := db.Get([]byte{i})
+			v, err := getFunc(db, []byte{i})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -418,14 +430,35 @@ func BenchmarkGet(b *testing.B) {
 	db, err := createTestDB(nil)
 	assert.Nil(b, err)
 	k := []byte{1}
-	if err := db.Put(k, k); err != nil {
+	if err := db.Put(k, make([]byte, 1024)); err != nil {
 		b.Fail()
 	}
 	b.ResetTimer()
+	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		if _, err := db.Get(k); err != nil {
 			b.Fatal()
 		}
+	}
+	assert.Nil(b, db.Close())
+}
+
+func BenchmarkGetAppend(b *testing.B) {
+	db, err := createTestDB(nil)
+	assert.Nil(b, err)
+	k := []byte{1}
+	if err := db.Put(k, make([]byte, 1024)); err != nil {
+		b.Fail()
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	buf := make([]byte, 0, 1024)
+	for i := 0; i < b.N; i++ {
+		value, err := db.GetAppend(k, buf[:0])
+		if err != nil {
+			b.Fatal()
+		}
+		buf = value
 	}
 	assert.Nil(b, db.Close())
 }

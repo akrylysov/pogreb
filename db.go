@@ -215,6 +215,34 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	return retValue, nil
 }
 
+// GetAppend returns the value for the given key (appended into buffer) stored in the DB or nil if the key doesn't exist
+func (db *DB) GetAppend(key, buf []byte) ([]byte, error) {
+	h := db.hash(key)
+	db.metrics.Gets.Add(1)
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	var retValue []byte
+	err := db.index.get(h, func(sl slot) (bool, error) {
+		if uint16(len(key)) != sl.keySize {
+			return false, nil
+		}
+		slKey, value, err := db.datalog.readKeyValue(sl)
+		if err != nil {
+			return true, err
+		}
+		if bytes.Equal(key, slKey) {
+			retValue = append(buf, value...)
+			return true, nil
+		}
+		db.metrics.HashCollisions.Add(1)
+		return false, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return retValue, nil
+}
+
 // Has returns true if the DB contains the given key.
 func (db *DB) Has(key []byte) (bool, error) {
 	h := db.hash(key)
