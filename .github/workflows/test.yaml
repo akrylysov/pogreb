@@ -9,11 +9,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - name: Install Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
     - name: Build GOARCH=386
       if: ${{ matrix.os != 'macos-latest' }}
       env:
@@ -23,4 +23,4 @@ jobs:
       run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic
     - name: Upload coverage to Codecov
       if: ${{ matrix.os == 'ubuntu-latest' }}
-      run: bash <(curl -s https://codecov.io/bash)
+      uses: codecov/codecov-action@v5
