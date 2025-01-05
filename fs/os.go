@@ -1,7 +1,6 @@
 package fs
 
 import (
-	"io/ioutil"
 	"os"
 )
 
@@ -34,8 +33,8 @@ func (fs *osFS) Rename(oldpath, newpath string) error {
 	return os.Rename(oldpath, newpath)
 }
 
-func (fs *osFS) ReadDir(name string) ([]os.FileInfo, error) {
-	return ioutil.ReadDir(name)
+func (fs *osFS) ReadDir(name string) ([]os.DirEntry, error) {
+	return os.ReadDir(name)
 }
 
 type osFile struct {

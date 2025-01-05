@@ -70,15 +70,15 @@ func (fs *memFS) Rename(oldpath, newpath string) error {
 	return os.ErrNotExist
 }
 
-func (fs *memFS) ReadDir(dir string) ([]os.FileInfo, error) {
+func (fs *memFS) ReadDir(dir string) ([]os.DirEntry, error) {
 	dir = filepath.Clean(dir)
-	var fis []os.FileInfo
+	var entries []os.DirEntry
 	for name, f := range fs.files {
 		if filepath.Dir(name) == dir {
-			fis = append(fis, f)
+			entries = append(entries, f)
 		}
 	}
-	return fis, nil
+	return entries, nil
 }
 
 type memFile struct {
@@ -221,6 +221,14 @@ func (f *memFile) IsDir() bool {
 
 func (f *memFile) Sys() interface{} {
 	return nil
+}
+
+func (f *memFile) Type() os.FileMode {
+	return f.perm
+}
+
+func (f *memFile) Info() (os.FileInfo, error) {
+	return f.Stat()
 }
 
 func (f *memFile) Slice(start int64, end int64) ([]byte, error) {

@@ -56,7 +56,7 @@ type FileSystem interface {
 	Rename(oldpath, newpath string) error
 
 	// ReadDir reads the directory and returns a list of directory entries.
-	ReadDir(name string) ([]os.FileInfo, error)
+	ReadDir(name string) ([]os.DirEntry, error)
 
 	// CreateLockFile creates a lock file.
 	CreateLockFile(name string, perm os.FileMode) (LockFile, bool, error)

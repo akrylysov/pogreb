@@ -419,7 +419,11 @@ func (db *DB) FileSize() (int64, error) {
 		return 0, err
 	}
 	for _, file := range files {
-		size += file.Size()
+		info, err := file.Info()
+		if err != nil {
+			return 0, err
+		}
+		size += info.Size()
 	}
 	return size, nil
 }

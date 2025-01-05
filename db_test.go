@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -30,7 +29,7 @@ var (
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if !testing.Verbose() {
-		SetLogger(log.New(ioutil.Discard, "", 0))
+		SetLogger(log.New(io.Discard, "", 0))
 	}
 	// Run tests against all file systems.
 	for _, fsys := range []fs.FileSystem{fs.Mem, fs.OSMMap, fs.OS} {
@@ -43,6 +42,7 @@ func TestMain(m *testing.M) {
 			os.Exit(exitCode)
 		}
 	}
+	_ = cleanDir(testDBName)
 	os.Exit(0)
 }
 
@@ -87,6 +87,17 @@ func TestHeaderSize(t *testing.T) {
 	}
 }
 
+func cleanDir(path string) error {
+	files, err := testFS.ReadDir(path)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		_ = testFS.Remove(filepath.Join(testDBName, file.Name()))
+	}
+	return nil
+}
+
 func createTestDB(opts *Options) (*DB, error) {
 	if opts == nil {
 		opts = &Options{FileSystem: testFS}
@@ -95,15 +106,10 @@ func createTestDB(opts *Options) (*DB, error) {
 			opts.FileSystem = testFS
 		}
 	}
-	path := testDBName
-	files, err := testFS.ReadDir(path)
-	if err != nil && !os.IsNotExist(err) {
+	if err := cleanDir(testDBName); err != nil {
 		return nil, err
 	}
-	for _, file := range files {
-		_ = testFS.Remove(filepath.Join(path, file.Name()))
-	}
-	return Open(path, opts)
+	return Open(testDBName, opts)
 }
 
 func TestEmpty(t *testing.T) {

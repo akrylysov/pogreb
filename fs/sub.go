@@ -39,7 +39,7 @@ func (fs *subFS) Rename(oldpath, newpath string) error {
 	return fs.fsys.Rename(subOldpath, subNewpath)
 }
 
-func (fs *subFS) ReadDir(name string) ([]os.FileInfo, error) {
+func (fs *subFS) ReadDir(name string) ([]os.DirEntry, error) {
 	subName := filepath.Join(fs.root, name)
 	return fs.fsys.ReadDir(subName)
 }
