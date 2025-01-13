@@ -41,17 +41,10 @@ func TestMain(m *testing.M) {
 			fmt.Printf("DEBUG\tFS=%T\n", fsys)
 			os.Exit(exitCode)
 		}
+		_ = cleanDir(testDBName)
+		_ = cleanDir(testDBBackupName)
 	}
-	_ = cleanDir(testDBName)
 	os.Exit(0)
-}
-
-func touchFile(fsys fs.FileSystem, path string) error {
-	f, err := fsys.OpenFile(path, os.O_CREATE|os.O_TRUNC, os.FileMode(0640))
-	if err != nil {
-		return err
-	}
-	return f.Close()
 }
 
 func appendFile(path string, data []byte) error {
@@ -93,7 +86,7 @@ func cleanDir(path string) error {
 		return err
 	}
 	for _, file := range files {
-		_ = testFS.Remove(filepath.Join(testDBName, file.Name()))
+		_ = testFS.Remove(filepath.Join(path, file.Name()))
 	}
 	return nil
 }

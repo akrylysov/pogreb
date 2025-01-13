@@ -1,8 +1,6 @@
 package pogreb
 
 import (
-	"sync/atomic"
-
 	"github.com/akrylysov/pogreb/internal/errors"
 )
 
@@ -135,11 +133,11 @@ func (db *DB) Compact() (CompactionResult, error) {
 	cr := CompactionResult{}
 
 	// Run only a single compaction at a time.
-	if !atomic.CompareAndSwapInt32(&db.compactionRunning, 0, 1) {
+	if !db.maintenanceMu.TryLock() {
 		return cr, errBusy
 	}
 	defer func() {
-		atomic.StoreInt32(&db.compactionRunning, 0)
+		db.maintenanceMu.Unlock()
 	}()
 
 	db.mu.RLock()
