@@ -49,4 +49,9 @@ func (fs *subFS) CreateLockFile(name string, perm os.FileMode) (LockFile, bool, 
 	return fs.fsys.CreateLockFile(subName, perm)
 }
 
+func (fs *subFS) MkdirAll(path string, perm os.FileMode) error {
+	subPath := filepath.Join(fs.root, path)
+	return fs.fsys.MkdirAll(subPath, perm)
+}
+
 var _ FileSystem = &subFS{}

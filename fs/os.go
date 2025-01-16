@@ -37,6 +37,10 @@ func (fs *osFS) ReadDir(name string) ([]os.DirEntry, error) {
 	return os.ReadDir(name)
 }
 
+func (fs *osFS) MkdirAll(path string, perm os.FileMode) error {
+	return os.MkdirAll(path, perm)
+}
+
 type osFile struct {
 	*os.File
 }

@@ -34,6 +34,10 @@ func (fs *errfs) ReadDir(name string) ([]os.DirEntry, error) {
 	return nil, errfileError
 }
 
+func (fs *errfs) MkdirAll(path string, perm os.FileMode) error {
+	return errfileError
+}
+
 type errfile struct{}
 
 var errfileError = errors.New("errfile error")

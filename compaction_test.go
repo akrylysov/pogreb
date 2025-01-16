@@ -3,6 +3,7 @@ package pogreb
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -224,15 +225,20 @@ func TestCompaction(t *testing.T) {
 		wg := sync.WaitGroup{}
 		wg.Add(1)
 		db.mu.Lock()
+		var goroutineRunning int32
 		go func() {
 			// The compaction is blocked until we unlock the mutex.
 			defer wg.Done()
+			atomic.StoreInt32(&goroutineRunning, 1)
 			_, err := db.Compact()
 			assert.Nil(t, err)
 		}()
-		// Make sure the compaction is running.
+		// Make sure the compaction goroutine is running.
+		// It's unlikely, but still possible the compaction goroutine doesn't reach the maintenance
+		// lock, which makes the test flaky.
+		runtime.Gosched()
 		assert.CompleteWithin(t, time.Minute, func() bool {
-			return atomic.LoadInt32(&db.compactionRunning) == 1
+			return atomic.LoadInt32(&goroutineRunning) == 1
 		})
 		_, err := db.Compact()
 		assert.Equal(t, errBusy, err)

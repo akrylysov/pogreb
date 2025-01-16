@@ -26,6 +26,7 @@ type Options struct {
 	//
 	// Default: fs.OSMMap.
 	FileSystem fs.FileSystem
+	rootFS     fs.FileSystem
 
 	maxSegmentSize             uint32
 	compactionMinSegmentSize   uint32
@@ -40,6 +41,7 @@ func (src *Options) copyWithDefaults(path string) *Options {
 	if opts.FileSystem == nil {
 		opts.FileSystem = fs.OSMMap
 	}
+	opts.rootFS = opts.FileSystem
 	opts.FileSystem = fs.Sub(opts.FileSystem, path)
 	if opts.maxSegmentSize == 0 {
 		opts.maxSegmentSize = math.MaxUint32

@@ -30,17 +30,17 @@ const (
 // DB represents the key-value storage.
 // All DB methods are safe for concurrent use by multiple goroutines.
 type DB struct {
-	mu                sync.RWMutex // Allows multiple database readers or a single writer.
-	opts              *Options
-	index             *index
-	datalog           *datalog
-	lock              fs.LockFile // Prevents opening multiple instances of the same database.
-	hashSeed          uint32
-	metrics           *Metrics
-	syncWrites        bool
-	cancelBgWorker    context.CancelFunc
-	closeWg           sync.WaitGroup
-	compactionRunning int32 // Prevents running compactions concurrently.
+	mu             sync.RWMutex // Allows multiple database readers or a single writer.
+	opts           *Options
+	index          *index
+	datalog        *datalog
+	lock           fs.LockFile // Prevents opening multiple instances of the same database.
+	hashSeed       uint32
+	metrics        *Metrics
+	syncWrites     bool
+	cancelBgWorker context.CancelFunc
+	closeWg        sync.WaitGroup
+	maintenanceMu  sync.Mutex // Ensures there only one maintenance task running at a time.
 }
 
 type dbMeta struct {
@@ -52,7 +52,7 @@ type dbMeta struct {
 func Open(path string, opts *Options) (*DB, error) {
 	opts = opts.copyWithDefaults(path)
 
-	if err := os.MkdirAll(path, 0755); err != nil {
+	if err := opts.rootFS.MkdirAll(path, 0755); err != nil {
 		return nil, err
 	}
 
