@@ -6,7 +6,7 @@ import (
 	"github.com/akrylysov/pogreb/internal/assert"
 )
 
-const testDBBackupName = testDBName + ".backup"
+var testDBBackupName string
 
 func TestBackup(t *testing.T) {
 	opts := &Options{
@@ -14,6 +14,8 @@ func TestBackup(t *testing.T) {
 		compactionMinSegmentSize:   520,
 		compactionMinFragmentation: 0.02,
 	}
+
+	testDBBackupName = testDBName + "db.backup"
 
 	run := func(name string, f func(t *testing.T, db *DB)) bool {
 		return t.Run(name, func(t *testing.T) {

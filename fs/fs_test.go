@@ -3,6 +3,7 @@ package fs
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/akrylysov/pogreb/internal/assert"
@@ -17,12 +18,18 @@ var (
 )
 
 func testLockFile(t *testing.T, fs FileSystem) {
-	_ = fs.Remove(lockTestPath)
-	lock, acquiredExisting, err := fs.CreateLockFile(lockTestPath, lockTestMode)
+	tmpDir, err := os.MkdirTemp("", "pogreb")
+	assert.Nil(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	path := filepath.Join(tmpDir, lockTestPath)
+
+	_ = fs.Remove(path)
+	lock, acquiredExisting, err := fs.CreateLockFile(path, lockTestMode)
 	if lock == nil || acquiredExisting || err != nil {
 		t.Fatal(lock, err, acquiredExisting)
 	}
-	lock2, acquiredExisting2, err2 := fs.CreateLockFile(lockTestPath, lockTestMode)
+	lock2, acquiredExisting2, err2 := fs.CreateLockFile(path, lockTestMode)
 	if lock2 != nil || acquiredExisting2 || err2 != os.ErrExist {
 		t.Fatal(lock2, acquiredExisting2, err2)
 	}
@@ -30,7 +37,7 @@ func testLockFile(t *testing.T, fs FileSystem) {
 	err = lock.Unlock()
 	assert.Nil(t, err)
 
-	_, err = fs.Stat(lockTestPath)
+	_, err = fs.Stat(path)
 	assert.NotNil(t, err)
 }
 
@@ -43,10 +50,16 @@ func touchFile(fs FileSystem, path string) error {
 }
 
 func testLockFileAcquireExisting(t *testing.T, fs FileSystem) {
-	err := touchFile(fs, lockTestPath)
+	tmpDir, err := os.MkdirTemp("", "pogreb")
+	assert.Nil(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	path := filepath.Join(tmpDir, lockTestPath)
+
+	err = touchFile(fs, path)
 	assert.Nil(t, err)
 
-	lock, acquiredExisting, err := fs.CreateLockFile(lockTestPath, lockTestMode)
+	lock, acquiredExisting, err := fs.CreateLockFile(path, lockTestMode)
 	if lock == nil || !acquiredExisting || err != nil {
 		t.Fatal(lock, err, acquiredExisting)
 	}
@@ -54,12 +67,16 @@ func testLockFileAcquireExisting(t *testing.T, fs FileSystem) {
 	err = lock.Unlock()
 	assert.Nil(t, err)
 
-	_, err = fs.Stat(lockTestPath)
+	_, err = fs.Stat(path)
 	assert.NotNil(t, err)
 }
 
 func testFS(t *testing.T, fsys FileSystem) {
-	f, err := fsys.OpenFile("test", os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(0666))
+	tmpDir, err := os.MkdirTemp("", "pogreb")
+	assert.Nil(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	f, err := fsys.OpenFile(filepath.Join(tmpDir, "test"), os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(0666))
 	assert.Nil(t, err)
 
 	buf := make([]byte, 10)
@@ -156,7 +173,7 @@ func testFS(t *testing.T, fsys FileSystem) {
 		_ = fi.Sys()
 
 		// File doesn't exist.
-		_, err = fsys.Stat("foobar")
+		_, err = fsys.Stat(filepath.Join(tmpDir, "foobar"))
 		assert.NotNil(t, err)
 	})
 
@@ -229,7 +246,7 @@ func testFS(t *testing.T, fsys FileSystem) {
 	t.Run("Close and Open again", func(t *testing.T) {
 		assert.Nil(t, f.Close())
 
-		f, err = fsys.OpenFile("test", os.O_RDWR, os.FileMode(0666))
+		f, err = fsys.OpenFile(filepath.Join(tmpDir, "test"), os.O_RDWR, os.FileMode(0666))
 		assert.Nil(t, err)
 
 		b, err := f.Slice(1, 10)
@@ -307,18 +324,18 @@ func testFS(t *testing.T, fsys FileSystem) {
 	})
 
 	t.Run("Rename", func(t *testing.T) {
-		err := fsys.Rename("foobar", "baz")
+		err := fsys.Rename(filepath.Join(tmpDir, "foobar"), filepath.Join(tmpDir, "baz"))
 		assert.NotNil(t, err)
 
-		assert.Nil(t, fsys.Rename("test", "test2"))
-		fi, err := fsys.Stat("test2")
+		assert.Nil(t, fsys.Rename(filepath.Join(tmpDir, "test"), filepath.Join(tmpDir, "test2")))
+		fi, err := fsys.Stat(filepath.Join(tmpDir, "test2"))
 		assert.Nil(t, err)
 		assert.Equal(t, int64(0), fi.Size())
 		assert.Equal(t, "test2", fi.Name())
 	})
 
 	t.Run("ReadDir", func(t *testing.T) {
-		fis, err := fsys.ReadDir(".")
+		fis, err := fsys.ReadDir(tmpDir)
 		assert.Nil(t, err)
 
 		var hasTestFile bool
@@ -331,10 +348,10 @@ func testFS(t *testing.T, fsys FileSystem) {
 	})
 
 	t.Run("Remove", func(t *testing.T) {
-		err := fsys.Remove("test2")
+		err := fsys.Remove(filepath.Join(tmpDir, "test2"))
 		assert.Nil(t, err)
 
-		_, err = fsys.Stat("test2")
+		_, err = fsys.Stat(filepath.Join(tmpDir, "test2"))
 		assert.NotNil(t, err)
 	})
 }

@@ -17,13 +17,10 @@ import (
 	"github.com/akrylysov/pogreb/internal/assert"
 )
 
-const (
-	testDBName = "test.db"
-)
-
 var (
 	// File system used for all tests.
 	testFS fs.FileSystem
+	testDBName string
 )
 
 func TestMain(m *testing.M) {
@@ -31,6 +28,14 @@ func TestMain(m *testing.M) {
 	if !testing.Verbose() {
 		SetLogger(log.New(io.Discard, "", 0))
 	}
+
+	tmpDir, err := os.MkdirTemp("", "pogreb-test-")
+	if err != nil {
+		log.Fatalf("failed to create temporary directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	testDBName = filepath.Join(tmpDir, "test.db")
+
 	// Run tests against all file systems.
 	for _, fsys := range []fs.FileSystem{fs.Mem, fs.OSMMap, fs.OS} {
 		testFS = fsys

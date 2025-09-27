@@ -2,12 +2,20 @@ package pogreb_test
 
 import (
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/akrylysov/pogreb"
 )
 
 func Example() {
-	db, err := pogreb.Open("pogreb.test", nil)
+	tmpDir, err := os.MkdirTemp("", "pogreb-example-")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	db, err := pogreb.Open(filepath.Join(tmpDir, "pogreb.test"), nil)
 	if err != nil {
 		log.Fatal(err)
 		return
