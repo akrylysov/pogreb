@@ -5,13 +5,13 @@ import (
 )
 
 func TestOSFS(t *testing.T) {
-	testFS(t, OS)
+	testFS(t, Sub(OS, t.TempDir()))
 }
 
 func TestOSLockFile(t *testing.T) {
-	testLockFile(t, OS)
+	testLockFile(t, Sub(OS, t.TempDir()))
 }
 
 func TestOSLockAcquireExisting(t *testing.T) {
-	testLockFileAcquireExisting(t, OS)
+	testLockFileAcquireExisting(t, Sub(OS, t.TempDir()))
 }

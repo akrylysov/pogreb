@@ -33,16 +33,29 @@ func TestMain(m *testing.M) {
 	}
 	// Run tests against all file systems.
 	for _, fsys := range []fs.FileSystem{fs.Mem, fs.OSMMap, fs.OS} {
-		testFS = fsys
-		if testing.Verbose() {
-			fmt.Printf("=== SET\tFS=%T\n", fsys)
+		var tmpDir string
+		if fsys == fs.Mem {
+			testFS = fsys
+		} else {
+			var err error
+			tmpDir, err = os.MkdirTemp("", "pogreb-test")
+			if err != nil {
+				fmt.Printf("failed to create temporary directory: %v", err)
+				os.Exit(1)
+			}
+			testFS = fs.Sub(fsys, tmpDir)
 		}
-		if exitCode := m.Run(); exitCode != 0 {
+		if testing.Verbose() {
+			fmt.Printf("=== SET\tFS=%T\ttmpDir=%s\n", fsys, tmpDir)
+		}
+		exitCode := m.Run()
+		if tmpDir != "" {
+			_ = os.RemoveAll(tmpDir)
+		}
+		if exitCode != 0 {
 			fmt.Printf("DEBUG\tFS=%T\n", fsys)
 			os.Exit(exitCode)
 		}
-		_ = cleanDir(testDBName)
-		_ = cleanDir(testDBBackupName)
 	}
 	os.Exit(0)
 }
@@ -83,6 +96,9 @@ func TestHeaderSize(t *testing.T) {
 func cleanDir(path string) error {
 	files, err := testFS.ReadDir(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	for _, file := range files {
@@ -214,7 +230,7 @@ func fullTest(t *testing.T, getFunc func(db *DB, key []byte) ([]byte, error)) {
 	verifyKeysAndClose(6)
 
 	// Delete all items
-	db, err = Open(testDBName, &Options{BackgroundSyncInterval: time.Millisecond})
+	db, err = Open(testDBName, &Options{BackgroundSyncInterval: time.Millisecond, FileSystem: testFS})
 	assert.Nil(t, err)
 	for i = 0; i < n; i++ {
 		assert.Nil(t, db.Delete([]byte{i}))

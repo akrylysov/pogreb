@@ -5,5 +5,5 @@ import (
 )
 
 func TestOSMMapFS(t *testing.T) {
-	testFS(t, OSMMap)
+	testFS(t, Sub(OSMMap, t.TempDir()))
 }
