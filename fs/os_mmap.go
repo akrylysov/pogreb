@@ -1,3 +1,5 @@
+//go:build !plan9
+
 package fs
 
 import (
@@ -160,4 +162,9 @@ func (f *osMMapFile) Close() error {
 		return err
 	}
 	return f.File.Close()
+}
+
+// Return a default FileSystem for this platform.
+func DefaultFileSystem() FileSystem {
+	return OSMMap
 }

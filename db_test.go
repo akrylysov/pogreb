@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 		SetLogger(log.New(io.Discard, "", 0))
 	}
 	// Run tests against all file systems.
-	for _, fsys := range []fs.FileSystem{fs.Mem, fs.OSMMap, fs.OS} {
+	for _, fsys := range testFileSystems {
 		var tmpDir string
 		if fsys == fs.Mem {
 			testFS = fsys
