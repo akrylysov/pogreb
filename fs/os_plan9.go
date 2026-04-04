@@ -15,9 +15,20 @@ func createLockFile(name string, perm os.FileMode) (LockFile, bool, error) {
 	}
 	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, syscall.DMEXCL|perm)
 	if err != nil {
+		if acquiredExisting {
+			// Assume a recognizable error.
+			err = os.ErrExist
+		}
 		return nil, false, err
 	}
 	return &osLockFile{f, name}, acquiredExisting, nil
+}
+
+func (f *osLockFile) Unlock() (err error) {
+	if err = f.Close(); err == nil {
+		 err = os.Remove(f.path)
+	}
+	return
 }
 
 // Return a default FileSystem for this platform.
